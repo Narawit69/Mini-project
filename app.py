@@ -195,7 +195,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
     title = st.text_input("หัวข้อเรื่อง / งานที่ทำ")
     content = st.text_area("รายละเอียดการทำงาน")
 
-    # อัปเกรด: รับหลายไฟล์ได้ และใช้ dynamic key เพื่อล้างข้อมูลตอนบันทึกเสร็จ
     uploaded_files = st.file_uploader(
         "แนบไฟล์หลักฐาน (เลือกได้หลายไฟล์: รูปภาพ / เอกสาร / วิดีโอ)", 
         type=["png", "jpg", "jpeg", "pdf", "mp4", "mov", "avi"],
@@ -213,7 +212,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
         if not st.session_state.form_submitted:
           st.session_state.form_submitted = True
 
-          # จัดการบันทึกไฟล์หลายไฟล์เป็น List
           saved_filenames = []
           if uploaded_files:
             for uploaded_file in uploaded_files:
@@ -229,7 +227,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
               "title": title,
               "category": category,
               "content": content,
-              "attachments": saved_filenames, # เก็บเป็น List รองรับหลายไฟล์
+              "attachments": saved_filenames,
               "comments": [],
               "created_at": datetime.now(),
           }
@@ -237,7 +235,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
           
           st.success("บันทึกข้อมูลสำเร็จเรียบร้อยแล้ว! 🎉")
           st.session_state.form_submitted = False
-          st.session_state.uploader_key += 1 # อัปเดต Key เพื่อเคลียร์ช่องอัปโหลดให้ว่าง
+          st.session_state.uploader_key += 1
           st.rerun()
       else:
         st.warning("กรุณากรอกหัวข้อและรายละเอียดให้ครบถ้วนครับ")
@@ -251,42 +249,105 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
   else:
     for log in user_logs:
       with st.expander(f"📌 [{log['category']}] {log['title']} ({log['date']})"):
-        st.write(f"**รายละเอียด:** {log['content']}")
         
-        # จัดการแสดงผลรองรับทั้งระบบไฟล์เดียวแบบเก่า (attachment) และระบบหลายไฟล์แบบใหม่ (attachments)
-        attachments_to_show = log.get("attachments", [])
-        if not attachments_to_show and log.get("attachment"):
-            attachments_to_show = [log.get("attachment")]
-        
-        if attachments_to_show:
-          st.write("📎 **ไฟล์แนบ:**")
-          for att in attachments_to_show:
-            file_path = os.path.join(UPLOAD_DIR, att)
-            if os.path.exists(file_path):
-              if att.lower().endswith(("png", "jpg", "jpeg")):
-                st.image(file_path, width=400)
-              elif att.lower().endswith(("mp4", "mov", "avi")):
-                st.video(file_path)
-              else:
-                st.write(f"📄 ไฟล์เอกสาร: {att}")
+        # ---------------------------------------------------------
+        # ระบบแก้ไขข้อมูล (Edit Mode)
+        # ---------------------------------------------------------
+        edit_key = f"edit_mode_{log['_id']}"
+        if edit_key not in st.session_state:
+          st.session_state[edit_key] = False
 
-        comments = log.get("comments", [])
-        if comments:
+        if not st.session_state[edit_key]:
+          # แสดงข้อมูลปกติ
+          st.write(f"**รายละเอียด:** {log['content']}")
+          
+          attachments_to_show = log.get("attachments", [])
+          if not attachments_to_show and log.get("attachment"):
+              attachments_to_show = [log.get("attachment")]
+          
+          if attachments_to_show:
+            st.write("📎 **ไฟล์แนบ:**")
+            for att in attachments_to_show:
+              file_path = os.path.join(UPLOAD_DIR, att)
+              if os.path.exists(file_path):
+                if att.lower().endswith(("png", "jpg", "jpeg")):
+                  st.image(file_path, width=400)
+                elif att.lower().endswith(("mp4", "mov", "avi")):
+                  st.video(file_path)
+                else:
+                  st.write(f"📄 ไฟล์เอกสาร: {att}")
+
+          comments = log.get("comments", [])
+          if comments:
+            st.markdown("---")
+            st.markdown("💬 **ความคิดเห็นจากผู้เยี่ยมชม:**")
+            for c in comments:
+              st.markdown(f"- **{c['user']}:** {c['text']} <span style='color:gray; font-size:small;'>({c['time']})</span>", unsafe_allow_html=True)
+
           st.markdown("---")
-          st.markdown("💬 **ความคิดเห็นจากผู้เยี่ยมชม:**")
-          for c in comments:
-            st.markdown(f"- **{c['user']}:** {c['text']} <span style='color:gray; font-size:small;'>({c['time']})</span>", unsafe_allow_html=True)
+          col_act1, col_act2 = st.columns(2)
+          with col_act1:
+            if st.button("✏️ แก้ไขบันทึกลงทะเบียนนี้", key=f"btn_edit_{log['_id']}", use_container_width=True):
+              st.session_state[edit_key] = True
+              st.rerun()
+          with col_act2:
+            if st.button("🗑️ ลบบันทึกนี้", key=f"del_{log['_id']}", type="secondary", use_container_width=True):
+              collection.delete_one({"_id": log["_id"]})
+              for att in attachments_to_show:
+                target_file = os.path.join(UPLOAD_DIR, att)
+                if os.path.exists(target_file):
+                  os.remove(target_file)
+              st.success("ลบข้อมูลสำเร็จแล้ว!")
+              st.rerun()
 
-        st.markdown("---")
-        if st.button("🗑️ ลบบันทึกนี้", key=f"del_{log['_id']}", type="secondary"):
-          collection.delete_one({"_id": log["_id"]})
-          # ลบไฟล์ทั้งหมดที่เชื่อมโยงกับโพสต์นี้ออกจากเครื่อง
-          for att in attachments_to_show:
-            target_file = os.path.join(UPLOAD_DIR, att)
-            if os.path.exists(target_file):
-              os.remove(target_file)
-          st.success("ลบข้อมูลสำเร็จแล้ว!")
-          st.rerun()
+        else:
+          # ฟอร์มแก้ไขข้อมูล
+          st.markdown("#### ✏️ แก้ไขข้อมูลบันทึกงาน")
+          with st.form(key=f"form_edit_{log['_id']}"):
+            categories_list = ["Coding", "Meeting", "Debugging", "Learning", "Other"]
+            default_cat_idx = categories_list.index(log['category']) if log['category'] in categories_list else 0
+            
+            e_col1, e_col2 = st.columns(2)
+            with e_col1:
+              try:
+                default_date = datetime.strptime(log['date'], "%Y-%m-%d").date()
+              except:
+                default_date = datetime.today().date()
+              new_date = st.date_input("วันที่ปฏิบัติงาน", default_date)
+            with e_col2:
+              new_category = st.selectbox("หมวดหมู่งาน", categories_list, index=default_cat_idx)
+              
+            new_title = st.text_input("หัวข้อเรื่อง / งานที่ทำ", value=log['title'])
+            new_content = st.text_area("รายละเอียดการทำงาน", value=log['content'])
+
+            col_sub1, col_sub2 = st.columns(2)
+            with col_sub1:
+              update_btn = st.form_submit_button("💾 บันทึกการแก้ไข", use_container_width=True)
+            with col_sub2:
+              cancel_btn = st.form_submit_button("❌ ยกเลิก", use_container_width=True)
+
+            if update_btn:
+              if new_title and new_content:
+                collection.update_one(
+                    {"_id": log["_id"]},
+                    {
+                        "$set": {
+                            "date": str(new_date),
+                            "category": new_category,
+                            "title": new_title,
+                            "content": new_content,
+                        }
+                    }
+                )
+                st.session_state[edit_key] = False
+                st.success("แก้ไขข้อมูลสำเร็จเรียบร้อยแล้ว! 🎉")
+                st.rerun()
+              else:
+                st.warning("กรุณากรอกหัวข้อและรายละเอียดให้ครบถ้วน")
+
+            if cancel_btn:
+              st.session_state[edit_key] = False
+              st.rerun()
 
 # ==========================================
 # โหมดที่ 2: เยี่ยมชมโปรไฟล์เพื่อนๆ (Explore)
