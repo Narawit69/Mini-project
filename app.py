@@ -18,6 +18,9 @@ profile_collection = db["profiles"]
 user_auth_collection = db["users"]
 visitor_collection = db["visitors"]
 
+# กำหนดค่าคงที่ (Global Constant)
+ITEMS_PER_PAGE = 5
+
 # สร้าง Index เพื่อให้การค้นหาและเรียงลำดับข้อมูลใน MongoDB ทำงานได้รวดเร็วขึ้น
 collection.create_index([("author", 1), ("created_at", -1)])
 profile_collection.create_index([("author", 1)], unique=True)
@@ -401,7 +404,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
 
   st.subheader("📚 รายการผลงานของคุณ")
 
-  ITEMS_PER_PAGE = 5
   total_user_logs = collection.count_documents(query_filter)
 
   if total_user_logs == 0:
