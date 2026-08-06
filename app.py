@@ -14,7 +14,7 @@ collection = db["logs"]
 profile_collection = db["profiles"]
 user_auth_collection = db["users"]
 
-# สร้าง Index เพื่อให้การค้นหาและเรียงลำดับข้อมูลใน MongoDB ทำงานได้รวดเร็วขึ้น (ส่วนหนึ่งของปัญหาที่ 3)
+# สร้าง Index เพื่อให้การค้นหาและเรียงลำดับข้อมูลใน MongoDB ทำงานได้รวดเร็วขึ้น
 collection.create_index([("author", 1), ("created_at", -1)])
 profile_collection.create_index([("author", 1)], unique=True)
 user_auth_collection.create_index([("username", 1)], unique=True)
@@ -263,7 +263,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
   st.divider()
   st.subheader("📚 ประวัติผลงานทั้งหมดของคุณ")
 
-  # --- ระบบ Pagination (แบ่งหน้าแสดงผลสำหรับปัญหาที่ 3) ---
   ITEMS_PER_PAGE = 5
   total_user_logs = collection.count_documents({"author": clean_user})
 
@@ -323,13 +322,21 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
           col_act1, col_act2 = st.columns(2)
           with col_act1:
             if st.button("✏️ แก้ไขบันทึกนี้", key=f"btn_edit_{log['_id']}", use_container_width=True):
-              st.session_state[edit_key] = True
-              st.rerun()
+              # [ข้อ 4] ตรวจสอบสิทธิ์ความเป็นเจ้าของก่อนเปิดโหมดแก้ไข
+              if log.get("author") == clean_user:
+                st.session_state[edit_key] = True
+                st.rerun()
+              else:
+                st.error("❌ คุณไม่มีสิทธิ์แก้ไขโพสต์ของผู้อื่น!")
           with col_act2:
             if st.button("🗑️ ลบบันทึกนี้", key=f"del_{log['_id']}", type="secondary", use_container_width=True):
-              collection.delete_one({"_id": log["_id"]})
-              st.success("ลบข้อมูลสำเร็จแล้ว!")
-              st.rerun()
+              # [ข้อ 4] ล็อกเงื่อนไข author ในคำสั่ง delete ของ MongoDB เพื่อความปลอดภัยขั้นสูงสุด
+              delete_result = collection.delete_one({"_id": log["_id"], "author": clean_user})
+              if delete_result.deleted_count > 0:
+                st.success("ลบข้อมูลสำเร็จแล้ว!")
+                st.rerun()
+              else:
+                st.error("❌ เกิดข้อผิดพลาด: คุณไม่มีสิทธิ์ลบโพสต์นี้!")
 
         else:
           st.markdown("#### ✏️ แก้ไขข้อมูลบันทึกงาน")
@@ -358,8 +365,9 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
 
             if update_btn:
               if new_title and new_content:
-                collection.update_one(
-                    {"_id": log["_id"]},
+                # [ข้อ 4] ล็อกเงื่อนไข author ตอนอัปเดตข้อมูลด้วย
+                update_result = collection.update_one(
+                    {"_id": log["_id"], "author": clean_user},
                     {
                         "$set": {
                             "date": str(new_date),
@@ -369,9 +377,12 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
                         }
                     }
                 )
-                st.session_state[edit_key] = False
-                st.success("แก้ไขข้อมูลสำเร็จเรียบร้อยแล้ว! 🎉")
-                st.rerun()
+                if update_result.modified_count > 0 or update_result.matched_count > 0:
+                  st.session_state[edit_key] = False
+                  st.success("แก้ไขข้อมูลสำเร็จเรียบร้อยแล้ว! 🎉")
+                  st.rerun()
+                else:
+                  st.error("❌ ไม่มีสิทธิ์แก้ไขข้อมูลนี้")
               else:
                 st.warning("กรุณากรอกหัวข้อและรายละเอียดให้ครบถ้วน")
 
@@ -414,7 +425,6 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
       st.divider()
       st.subheader(f"📚 ผลงานทั้งหมดของ {selected_friend}")
       
-      # ระบบ Pagination สำหรับหน้าเพื่อนเช่นเดียวกัน
       friend_total_logs = collection.count_documents({"author": selected_friend})
       if friend_total_logs == 0:
         st.info(f"เพื่อนชื่อ '{selected_friend}' ยังไม่มีประวัติงานบันทึกไว้ครับ")
