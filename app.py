@@ -3,6 +3,8 @@ import hashlib
 import os
 import streamlit as st
 from pymongo import MongoClient
+import cloudinary
+import cloudinary.uploader
 
 # 1. เชื่อมต่อกับ MongoDB
 mongo_uri = st.secrets["MONGO_URI"]
@@ -12,15 +14,28 @@ collection = db["logs"]
 profile_collection = db["profiles"]
 user_auth_collection = db["users"]
 
-# 2. กำหนด Path สำหรับเก็บไฟล์
-UPLOAD_DIR = "./data_volumes"
-if not os.path.exists(UPLOAD_DIR):
-  os.makedirs(UPLOAD_DIR)
+# ตั้งค่า Cloudinary สำหรับเก็บไฟล์บน Cloud[cite: 3]
+cloudinary.config(
+    cloud_name=st.secrets["cloudinary"]["cloud_name"],
+    api_key=st.secrets["cloudinary"]["api_key"],
+    api_secret=st.secrets["cloudinary"]["api_secret"],
+    secure=True
+)
 
-# ตั้งค่าหน้าเว็บแบบ Wide Mode
+# ฟังก์ชันช่วยปรับแต่ง URL ของ Cloudinary ให้โหลดไวขึ้น (Auto Quality & Resizing)[cite: 3]
+def optimize_cloudinary_url(url, width=None):
+  if "cloudinary.com" in url and "/upload/" in url:
+    parts = url.split("/upload/")
+    transformations = "f_auto,q_auto"
+    if width:
+      transformations += f",w_{width}"
+    return f"{parts[0]}/upload/{transformations}/{parts[1]}"
+  return url
+
+# ตั้งค่าหน้าเว็บแบบ Wide Mode[cite: 3]
 st.set_page_config(page_title="My Daily Work Log", page_icon="💻", layout="wide")
 
-# เพิ่ม Custom CSS
+# เพิ่ม Custom CSS[cite: 3]
 st.markdown("""
     <style>
     .main-title {
@@ -47,14 +62,14 @@ st.markdown("""
 def hash_password(password):
   return hashlib.sha256(password.encode()).hexdigest()
 
-# จัดการ Session State ของระบบล็อกอิน และตัวรีเซ็ตช่องอัปโหลดไฟล์
+# จัดการ Session State ของระบบล็อกอิน และตัวรีเซ็ตช่องอัปโหลดไฟล์[cite: 3]
 if "logged_in_user" not in st.session_state:
   st.session_state.logged_in_user = None
 if "uploader_key" not in st.session_state:
   st.session_state.uploader_key = 0
 
 # =====================================================================
-# ส่วนที่ 1: หน้าล็อกอิน / สมัครสมาชิก
+# ส่วนที่ 1: หน้าล็อกอิน / สมัครสมาชิก[cite: 3]
 # =====================================================================
 if not st.session_state.logged_in_user:
   st.markdown("<div class='main-title' style='text-align: center;'>💻 My Daily Work Log & Social Space</div>", unsafe_allow_html=True)
@@ -67,7 +82,7 @@ if not st.session_state.logged_in_user:
     st.markdown("<div class='card-box'>", unsafe_allow_html=True)
     auth_tab1, auth_tab2 = st.tabs(["🔑 เข้าสู่ระบบ", "📝 สมัครสมาชิก"])
 
-    # Tab 1: เข้าสู่ระบบ
+    # Tab 1: เข้าสู่ระบบ[cite: 3]
     with auth_tab1:
       st.subheader("ยินดีต้อนรับกลับมา!")
       login_user = st.text_input("👤 ชื่อผู้ใช้งาน", key="l_user").strip()
@@ -86,7 +101,7 @@ if not st.session_state.logged_in_user:
         else:
           st.warning("⚠️ กรุณากรอกข้อมูลให้ครบถ้วน")
 
-    # Tab 2: สมัครสมาชิก
+    # Tab 2: สมัครสมาชิก[cite: 3]
     with auth_tab2:
       st.subheader("สร้างบัญชีใหม่")
       reg_user = st.text_input("👤 กำหนดชื่อผู้ใช้งาน", key="r_user").strip()
@@ -118,7 +133,7 @@ if not st.session_state.logged_in_user:
   st.stop() 
 
 # =====================================================================
-# ส่วนที่ 2: หน้าหลักหลัง Login 
+# ส่วนที่ 2: หน้าหลักหลัง Login[cite: 3]
 # =====================================================================
 clean_user = st.session_state.logged_in_user
 
@@ -142,10 +157,8 @@ with st.sidebar.form("profile_form"):
   if save_profile:
     avatar_filename = user_profile.get("avatar", "")
     if avatar_file is not None:
-      avatar_filename = f"avatar_{clean_user}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{avatar_file.name}"
-      avatar_path = os.path.join(UPLOAD_DIR, avatar_filename)
-      with open(avatar_path, "wb") as f:
-        f.write(avatar_file.getbuffer())
+      upload_avatar = cloudinary.uploader.upload(avatar_file, resource_type="image", folder="worklog_avatars")
+      avatar_filename = upload_avatar.get("secure_url")
     
     profile_collection.update_one(
         {"author": clean_user},
@@ -162,7 +175,7 @@ if st.sidebar.button("🚪 ออกจากระบบ", use_container_width=
 
 
 # ==========================================
-# โหมดที่ 1: งานของฉัน & จัดการ (My Work Log)
+# โหมดที่ 1: งานของฉัน & จัดการ (My Work Log)[cite: 3]
 # ==========================================
 if nav_mode == "📁 งานของฉัน & จัดการพอร์ต":
   st.markdown(f"<div class='main-title'>📁 พอร์ตโฟลิโอและบันทึกงานของคุณ</div>", unsafe_allow_html=True)
@@ -171,8 +184,10 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
   col_p1, col_p2 = st.columns([1, 6])
   with col_p1:
     avatar_img = user_profile.get("avatar", "")
-    if avatar_img and os.path.exists(os.path.join(UPLOAD_DIR, avatar_img)):
-      st.image(os.path.join(UPLOAD_DIR, avatar_img), width=120)
+    if avatar_img:
+      # ใช้ฟังก์ชัน optimize รูปโปรไฟล์[cite: 3]
+      optimized_avatar = optimize_cloudinary_url(avatar_img, width=200)
+      st.image(optimized_avatar, width=120)
     else:
       st.info("🖼️ ไม่มีรูปโปรไฟล์")
   with col_p2:
@@ -212,14 +227,15 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
         if not st.session_state.form_submitted:
           st.session_state.form_submitted = True
 
-          saved_filenames = []
+          saved_file_urls = []
           if uploaded_files:
             for uploaded_file in uploaded_files:
-              filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uploaded_file.name}"
-              file_path = os.path.join(UPLOAD_DIR, filename)
-              with open(file_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-              saved_filenames.append(filename)
+              upload_result = cloudinary.uploader.upload(
+                  uploaded_file,
+                  resource_type="auto",
+                  folder="worklog_uploads"
+              )
+              saved_file_urls.append(upload_result.get("secure_url"))
 
           log_data = {
               "author": clean_user,
@@ -227,7 +243,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
               "title": title,
               "category": category,
               "content": content,
-              "attachments": saved_filenames,
+              "attachments": saved_file_urls,
               "comments": [],
               "created_at": datetime.now(),
           }
@@ -250,15 +266,11 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
     for log in user_logs:
       with st.expander(f"📌 [{log['category']}] {log['title']} ({log['date']})"):
         
-        # ---------------------------------------------------------
-        # ระบบแก้ไขข้อมูล (Edit Mode)
-        # ---------------------------------------------------------
         edit_key = f"edit_mode_{log['_id']}"
         if edit_key not in st.session_state:
           st.session_state[edit_key] = False
 
         if not st.session_state[edit_key]:
-          # แสดงข้อมูลปกติ
           st.write(f"**รายละเอียด:** {log['content']}")
           
           attachments_to_show = log.get("attachments", [])
@@ -267,15 +279,16 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
           
           if attachments_to_show:
             st.write("📎 **ไฟล์แนบ:**")
-            for att in attachments_to_show:
-              file_path = os.path.join(UPLOAD_DIR, att)
-              if os.path.exists(file_path):
-                if att.lower().endswith(("png", "jpg", "jpeg")):
-                  st.image(file_path, width=400)
-                elif att.lower().endswith(("mp4", "mov", "avi")):
-                  st.video(file_path)
-                else:
-                  st.write(f"📄 ไฟล์เอกสาร: {att}")
+            for att_url in attachments_to_show:
+              lower_url = att_url.lower()
+              if any(ext in lower_url for ext in [".png", ".jpg", ".jpeg", ".webp"]):
+                # ใช้ฟังก์ชัน optimize รูปภาพแนบ[cite: 3]
+                optimized_img_url = optimize_cloudinary_url(att_url, width=800)
+                st.image(optimized_img_url, width=400)
+              elif any(ext in lower_url for ext in [".mp4", ".mov", ".avi"]):
+                st.video(att_url)
+              else:
+                st.markdown(f"📄 [คลิกเพื่อเปิดดูไฟล์เอกสาร]({att_url})", unsafe_allow_html=True)
 
           comments = log.get("comments", [])
           if comments:
@@ -293,15 +306,10 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
           with col_act2:
             if st.button("🗑️ ลบบันทึกนี้", key=f"del_{log['_id']}", type="secondary", use_container_width=True):
               collection.delete_one({"_id": log["_id"]})
-              for att in attachments_to_show:
-                target_file = os.path.join(UPLOAD_DIR, att)
-                if os.path.exists(target_file):
-                  os.remove(target_file)
               st.success("ลบข้อมูลสำเร็จแล้ว!")
               st.rerun()
 
         else:
-          # ฟอร์มแก้ไขข้อมูล
           st.markdown("#### ✏️ แก้ไขข้อมูลบันทึกงาน")
           with st.form(key=f"form_edit_{log['_id']}"):
             categories_list = ["Coding", "Meeting", "Debugging", "Learning", "Other"]
@@ -350,7 +358,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
               st.rerun()
 
 # ==========================================
-# โหมดที่ 2: เยี่ยมชมโปรไฟล์เพื่อนๆ (Explore)
+# โหมดที่ 2: เยี่ยมชมโปรไฟล์เพื่อนๆ (Explore)[cite: 3]
 # ==========================================
 elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์เพื่อนๆ":
   st.markdown("<div class='main-title'>🌐 พื้นที่สำรวจและเยี่ยมชมผลงานเพื่อนๆ</div>", unsafe_allow_html=True)
@@ -367,13 +375,14 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
     
     if selected_friend:
       st.divider()
-      friend_profile = profile_collection.find_one({"author": selected_friend}) or {}
+      friend_profile = profile_collection.find_one({"author": selected_friend}) | {}
       
       f_col1, f_col2 = st.columns([1, 6])
       with f_col1:
         f_avatar = friend_profile.get("avatar", "")
-        if f_avatar and os.path.exists(os.path.join(UPLOAD_DIR, f_avatar)):
-          st.image(os.path.join(UPLOAD_DIR, f_avatar), width=120)
+        if f_avatar:
+          optimized_f_avatar = optimize_cloudinary_url(f_avatar, width=200)
+          st.image(optimized_f_avatar, width=120)
         else:
           st.info("🖼️ ไม่มีรูปโปรไฟล์")
       with f_col2:
@@ -397,15 +406,15 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
             
             if attachments_to_show:
               st.write("📎 **ไฟล์แนบ:**")
-              for att in attachments_to_show:
-                file_path = os.path.join(UPLOAD_DIR, att)
-                if os.path.exists(file_path):
-                  if att.lower().endswith(("png", "jpg", "jpeg")):
-                    st.image(file_path, width=400)
-                  elif att.lower().endswith(("mp4", "mov", "avi")):
-                    st.video(file_path)
-                  else:
-                    st.write(f"📄 ไฟล์เอกสาร: {att}")
+              for att_url in attachments_to_show:
+                lower_url = att_url.lower()
+                if any(ext in lower_url for ext in [".png", ".jpg", ".jpeg", ".webp"]):
+                  optimized_img_url = optimize_cloudinary_url(att_url, width=800)
+                  st.image(optimized_img_url, width=400)
+                elif any(ext in lower_url for ext in [".mp4", ".mov", ".avi"]):
+                  st.video(att_url)
+                else:
+                  st.markdown(f"📄 [คลิกเพื่อเปิดดูไฟล์เอกสาร]({att_url})", unsafe_allow_html=True)
 
             comments = log.get("comments", [])
             st.markdown("---")
