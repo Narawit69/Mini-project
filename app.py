@@ -13,11 +13,13 @@ db = client["worklog_db"]
 collection = db["logs"]
 profile_collection = db["profiles"]
 user_auth_collection = db["users"]
+visitor_collection = db["visitors"] # Collection สำหรับเก็บประวัติผู้เข้าชมโปรไฟล์
 
 # สร้าง Index เพื่อให้การค้นหาและเรียงลำดับข้อมูลใน MongoDB ทำงานได้รวดเร็วขึ้น
 collection.create_index([("author", 1), ("created_at", -1)])
 profile_collection.create_index([("author", 1)], unique=True)
 user_auth_collection.create_index([("username", 1)], unique=True)
+visitor_collection.create_index([("profile_owner", 1), ("visited_at", -1)])
 
 # ตั้งค่า Cloudinary สำหรับเก็บไฟล์บน Cloud
 cloudinary.config(
@@ -197,6 +199,21 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
   with col_p2:
     st.subheader(f"ผู้ใช้งาน: {clean_user}")
     st.write(f"**Bio:** {user_profile.get('bio', 'ยังไม่มีคำอธิบาย')}")
+
+  # --- [ฟีเจอร์ใหม่] กล่องจดหมายแจ้งเตือนผู้เข้าชมโปรไฟล์ (Profile Viewers Inbox) ---
+  st.markdown("---")
+  st.subheader("📬 กล่องจดหมายผู้เข้าชมโปรไฟล์ (Profile Viewers)")
+  
+  recent_visitors = list(visitor_collection.find({"profile_owner": clean_user}).sort("visited_at", -1).limit(10))
+  
+  if recent_visitors:
+    st.info("👀 มีผู้ใช้งานแวะมาเยี่ยมชมโปรไฟล์ของคุณ:")
+    for v_item in recent_visitors:
+      v_name = v_item.get("visitor", "ผู้ใช้ไม่ระบุตัวตน")
+      v_time = v_item.get("visited_at").strftime("%Y-%m-%d %H:%M") if v_item.get("visited_at") else "-"
+      st.markdown(f"- 👤 **{v_name}** เข้ามาเยี่ยมชมโปรไฟล์ของคุณเมื่อวันที่ {v_time}")
+  else:
+    st.caption("📭 ยังไม่มีใครมาเยี่ยมชมโปรไฟล์ของคุณในขณะนี้ ลองแวะไปส่องเพื่อนก่อน เผื่อเพื่อนจะแวะมาส่องกลับ!")
 
   st.divider()
 
@@ -477,6 +494,17 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
     selected_friend = st.selectbox("🔍 เลือกรายชื่อเพื่อนที่คุณต้องการเยี่ยมชม:", other_authors)
     
     if selected_friend:
+      # --- [ฟีเจอร์ใหม่] บันทึกประวัติผู้เข้าชมโปรไฟล์ (Profile Viewers) แบบ Throttle ไม่ให้เบิ้ลรัวๆ ---
+      if selected_friend != clean_user:
+        visitor_session_key = f"visited_{selected_friend}"
+        if visitor_session_key not in st.session_state:
+          st.session_state[visitor_session_key] = True
+          visitor_collection.insert_one({
+              "profile_owner": selected_friend,
+              "visitor": clean_user,
+              "visited_at": datetime.now()
+          })
+
       st.divider()
       friend_profile = profile_collection.find_one({"author": selected_friend}) | {}
       
