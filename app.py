@@ -1,4 +1,5 @@
 from datetime import datetime
+import hashlib
 import os
 import streamlit as st
 from pymongo import MongoClient
@@ -8,8 +9,9 @@ mongo_uri = st.secrets["MONGO_URI"]
 client = MongoClient(mongo_uri)
 db = client["worklog_db"]
 collection = db["logs"]
-# เพิ่ม Collection สำหรับเก็บข้อมูลโปรไฟล์ (รูปโปรไฟล์ / Bio)
 profile_collection = db["profiles"]
+# เพิ่ม Collection สำหรับเก็บบัญชีผู้ใช้และรหัสผ่าน
+user_auth_collection = db["users"]
 
 # 2. กำหนด Path สำหรับเก็บไฟล์
 UPLOAD_DIR = "./data_volumes"
@@ -20,23 +22,73 @@ if not os.path.exists(UPLOAD_DIR):
 st.set_page_config(page_title="My Daily Work Log", page_icon="💻", layout="wide")
 
 st.title("💻 My Daily Work Log & Social Space")
-st.write("ระบบบันทึกรายงานการทำงานประจำวัน และพื้นที่แชร์ผลงานร่วมกัน")
+st.write("ระบบบันทึกรายงานการทำงานประจำวัน และพื้นที่แชร์ผลงานร่วมกัน (Secure Login)")
 
-# --- แถบด้านข้าง (Sidebar): ระบบระบุตัวตนและตั้งค่าโปรไฟล์ ---
-st.sidebar.header("🔐 ตั้งค่าผู้ใช้งาน")
-current_user = st.sidebar.text_input("ระบุชื่อของคุณ:", value="")
+# ฟังก์ชันแปลงรหัสผ่านเป็น Hash (เพื่อความปลอดภัย ไม่เก็บรหัสผ่านตรงๆ)
+def hash_password(password):
+  return hashlib.sha256(password.encode()).hexdigest()
 
-if not current_user.strip():
-  st.warning("⚠️ กรุณากรอกชื่อของคุณที่แถบด้านข้างซ้ายมือ เพื่อเริ่มต้นใช้งานระบบครับ")
+# --- แถบด้านข้าง (Sidebar): ระบบล็อกอินและสมัครสมาชิก ---
+st.sidebar.header("🔐 เข้าสู่ระบบ / ลงทะเบียน")
+auth_mode = st.sidebar.radio("เลือกการดำเนินการ", ["เข้าสู่ระบบ (Login)", "สมัครสมาชิกใหม่ (Register)"])
+
+auth_username = st.sidebar.text_input("👤 ชื่อผู้ใช้งาน (Username)").strip()
+auth_password = st.sidebar.text_input("🔑 รหัสผ่าน (Password)", type="password")
+
+if "logged_in_user" not in st.session_state:
+  st.session_state.logged_in_user = None
+
+if auth_mode == "สมัครสมาชิกใหม่ (Register)":
+  if st.sidebar.button("ยืนยันการสมัคร"):
+    if auth_username and auth_password:
+      existing_user = user_auth_collection.find_one({"username": auth_username})
+      if existing_user:
+        st.sidebar.error("❌ ชื่อผู้ใช้นี้ถูกใช้งานแล้ว กรุณาใช้ชื่ออื่น")
+      else:
+        # บันทึกข้อมูลผู้ใช้ใหม่ลง MongoDB
+        user_auth_collection.insert_one({
+            "username": auth_username,
+            "password": hash_password(auth_password),
+            "created_at": datetime.now()
+        })
+        # สร้างโปรไฟล์เริ่มต้น
+        profile_collection.insert_one({
+            "author": auth_username,
+            "bio": "ยังไม่ได้เขียนอธิบายตัวเอง...",
+            "avatar": ""
+        })
+        st.sidebar.success("🎉 สมัครสมาชิกสำเร็จ! กรุณากดเลือก 'เข้าสู่ระบบ' ด้านบนเพื่อใช้งาน")
+    else:
+      st.sidebar.warning("⚠️ กรุณากรอกชื่อและรหัสผ่านให้ครบถ้วน")
+
+elif auth_mode == "เข้าสู่ระบบ (Login)":
+  if st.sidebar.button("เข้าสู่ระบบ"):
+    if auth_username and auth_password:
+      user_record = user_auth_collection.find_one({"username": auth_username})
+      if user_record and user_record["password"] == hash_password(auth_password):
+        st.session_state.logged_in_user = auth_username
+        st.sidebar.success(f"ยินดีต้อนรับคุณ {auth_username}!")
+        st.rerun()
+      else:
+        st.sidebar.error("❌ ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+    else:
+      st.sidebar.warning("⚠️ กรุณากรอกชื่อและรหัสผ่าน")
+
+# ตรวจสอบสถานะการล็อกอินปัจจุบัน
+if not st.session_state.logged_in_user:
+  st.warning("🔒 กรุณาเข้าสู่ระบบผ่านแถบด้านข้าง (Sidebar) ทางซ้ายมือ เพื่อใช้งานระบบครับ")
   st.stop()
 
-clean_user = current_user.strip()
-st.sidebar.success(f"ใช้งานในนาม: **{clean_user}**")
+clean_user = st.session_state.logged_in_user
+st.sidebar.divider()
+st.sidebar.success(f"กำลังใช้งานในนาม: **{clean_user}**")
+if st.sidebar.button("🚪 ออกจากระบบ (Logout)"):
+  st.session_state.logged_in_user = None
+  st.rerun()
 
-# จัดการข้อมูลโปรไฟล์ในฐานข้อมูล
+# ดึงข้อมูลโปรไฟล์ของผู้ใช้ปัจจุบัน
 user_profile = profile_collection.find_one({"author": clean_user})
 if not user_profile:
-  # ถ้ายังไม่มีโปรไฟล์ สร้างค่าเริ่มต้นไว้
   user_profile = {"author": clean_user, "bio": "ยังไม่ได้เขียนอธิบายตัวเอง...", "avatar": ""}
   profile_collection.insert_one(user_profile)
 
@@ -64,7 +116,6 @@ with st.sidebar.form("profile_form"):
     st.rerun()
 
 st.sidebar.divider()
-# เมนูเปลี่ยนหน้า
 nav_mode = st.sidebar.radio("📌 เลือกโหมดการใช้งาน", ["📁 งานของฉัน & จัดการ", "🌐 เยี่ยมชมโปรไฟล์เพื่อนๆ"])
 
 # ==========================================
@@ -73,7 +124,6 @@ nav_mode = st.sidebar.radio("📌 เลือกโหมดการใช้�
 if nav_mode == "📁 งานของฉัน & จัดการ":
   st.header(f"📁 พอร์ตโฟลิโอและบันทึกงานของ: {clean_user}")
   
-  # แสดงส่วนหัวโปรไฟล์ของตัวเอง
   col_p1, col_p2 = st.columns([1, 4])
   with col_p1:
     avatar_img = user_profile.get("avatar", "")
@@ -86,7 +136,6 @@ if nav_mode == "📁 งานของฉัน & จัดการ":
 
   st.divider()
 
-  # ฟอร์มเพิ่มงานใหม่
   with st.form("worklog_form"):
     st.subheader("📝 เพิ่มบันทึกงานใหม่")
     log_date = st.date_input("วันที่ปฏิบัติงาน", datetime.today())
@@ -125,7 +174,7 @@ if nav_mode == "📁 งานของฉัน & จัดการ":
               "category": category,
               "content": content,
               "attachment": filename,
-              "comments": [],  # รองรับระบบคอมเมนต์
+              "comments": [],
               "created_at": datetime.now(),
           }
           collection.insert_one(log_data)
@@ -155,7 +204,6 @@ if nav_mode == "📁 งานของฉัน & จัดการ":
             elif log["attachment"].lower().endswith(("mp4", "mov", "avi")):
               st.video(file_path)
 
-        # แสดงรายการคอมเมนต์ที่มีคนมาฝากไว้
         comments = log.get("comments", [])
         if comments:
           st.markdown("---")
@@ -180,19 +228,16 @@ elif nav_mode == "🌐 เยี่ยมชมโปรไฟล์เพื่
   st.header("🌐 หน้าสำรวจและเยี่ยมชมโปรไฟล์ผู้อื่น")
   st.write("เลือกดูโปรไฟล์และผลงานของเพื่อนๆ ในระบบ พร้อมส่งคอมเมนต์ให้กำลังใจได้ที่นี่ครับ!")
 
-  # ดึงรายชื่อผู้ใช้งานทั้งหมดที่ไม่ซ้ำกันจากฐานข้อมูล
   all_authors = collection.distinct("author")
-  # กรองชื่อตัวเองออก หรือจะเก็บไว้ก็ได้ (แต่เรามาส่องคนอื่น เลือกโชว์คนอื่น)
   other_authors = [a for a in all_authors if a.lower() != clean_user.lower()]
 
   if len(other_authors) == 0:
-    st.info("ยังไม่มีผู้ใช้งานคนอื่นในระบบเลยครับ ลองชวนเพื่อนๆ มาใช้งานกันดูนะ!")
+    st.info("ยังไม่มีผู้ใช้งานคนอื่นในระบบเลยครับ ลองชวนเพื่อนๆ มาสมัครใช้งานกันดูนะ!")
   else:
     selected_friend = st.selectbox("🔍 เลือกระบุชื่อเพื่อนที่คุณต้องการเยี่ยมชม:", other_authors)
     
     if selected_friend:
       st.divider()
-      # ดึงข้อมูลโปรไฟล์ของเพื่อนคนนั้น
       friend_profile = profile_collection.find_one({"author": selected_friend}) or {}
       
       f_col1, f_col2 = st.columns([1, 4])
@@ -226,7 +271,6 @@ elif nav_mode == "🌐 เยี่ยมชมโปรไฟล์เพื่
                 elif log["attachment"].lower().endswith(("mp4", "mov", "avi")):
                   st.video(file_path)
 
-            # แสดงคอมเมนต์เดิม
             comments = log.get("comments", [])
             st.markdown("---")
             st.markdown("💬 **ความคิดเห็นทั้งหมด:**")
@@ -236,7 +280,6 @@ elif nav_mode == "🌐 เยี่ยมชมโปรไฟล์เพื่
             else:
               st.caption("ยังไม่มีความคิดเห็น เป็นคนแรกที่คอมเมนต์เลยสิ!")
 
-            # ฟอร์มฝากคอมเมนต์ (คนอื่นพิมพ์คอมเมนต์ได้ แต่ไม่มีสิทธิ์ลบโพสต์เด็ดขาด)
             with st.form(key=f"comment_form_{log['_id']}"):
               comment_text = st.text_input("💬 แสดงความคิดเห็น:")
               submit_comment = st.form_submit_button("ส่งคอมเมนต์")
