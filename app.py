@@ -14,7 +14,12 @@ collection = db["logs"]
 profile_collection = db["profiles"]
 user_auth_collection = db["users"]
 
-# ตั้งค่า Cloudinary สำหรับเก็บไฟล์บน Cloud[cite: 3]
+# สร้าง Index เพื่อให้การค้นหาและเรียงลำดับข้อมูลใน MongoDB ทำงานได้รวดเร็วขึ้น (ส่วนหนึ่งของปัญหาที่ 3)
+collection.create_index([("author", 1), ("created_at", -1)])
+profile_collection.create_index([("author", 1)], unique=True)
+user_auth_collection.create_index([("username", 1)], unique=True)
+
+# ตั้งค่า Cloudinary สำหรับเก็บไฟล์บน Cloud
 cloudinary.config(
     cloud_name=st.secrets["cloudinary"]["cloud_name"],
     api_key=st.secrets["cloudinary"]["api_key"],
@@ -22,7 +27,7 @@ cloudinary.config(
     secure=True
 )
 
-# ฟังก์ชันช่วยปรับแต่ง URL ของ Cloudinary ให้โหลดไวขึ้น (Auto Quality & Resizing)[cite: 3]
+# ฟังก์ชันช่วยปรับแต่ง URL ของ Cloudinary ให้โหลดไวขึ้น (Auto Quality & Resizing)
 def optimize_cloudinary_url(url, width=None):
   if "cloudinary.com" in url and "/upload/" in url:
     parts = url.split("/upload/")
@@ -32,10 +37,10 @@ def optimize_cloudinary_url(url, width=None):
     return f"{parts[0]}/upload/{transformations}/{parts[1]}"
   return url
 
-# ตั้งค่าหน้าเว็บแบบ Wide Mode[cite: 3]
+# ตั้งค่าหน้าเว็บแบบ Wide Mode
 st.set_page_config(page_title="My Daily Work Log", page_icon="💻", layout="wide")
 
-# เพิ่ม Custom CSS[cite: 3]
+# เพิ่ม Custom CSS
 st.markdown("""
     <style>
     .main-title {
@@ -62,14 +67,14 @@ st.markdown("""
 def hash_password(password):
   return hashlib.sha256(password.encode()).hexdigest()
 
-# จัดการ Session State ของระบบล็อกอิน และตัวรีเซ็ตช่องอัปโหลดไฟล์[cite: 3]
+# จัดการ Session State ของระบบล็อกอิน และตัวรีเซ็ตช่องอัปโหลดไฟล์
 if "logged_in_user" not in st.session_state:
   st.session_state.logged_in_user = None
 if "uploader_key" not in st.session_state:
   st.session_state.uploader_key = 0
 
 # =====================================================================
-# ส่วนที่ 1: หน้าล็อกอิน / สมัครสมาชิก[cite: 3]
+# ส่วนที่ 1: หน้าล็อกอิน / สมัครสมาชิก
 # =====================================================================
 if not st.session_state.logged_in_user:
   st.markdown("<div class='main-title' style='text-align: center;'>💻 My Daily Work Log & Social Space</div>", unsafe_allow_html=True)
@@ -82,7 +87,7 @@ if not st.session_state.logged_in_user:
     st.markdown("<div class='card-box'>", unsafe_allow_html=True)
     auth_tab1, auth_tab2 = st.tabs(["🔑 เข้าสู่ระบบ", "📝 สมัครสมาชิก"])
 
-    # Tab 1: เข้าสู่ระบบ[cite: 3]
+    # Tab 1: เข้าสู่ระบบ
     with auth_tab1:
       st.subheader("ยินดีต้อนรับกลับมา!")
       login_user = st.text_input("👤 ชื่อผู้ใช้งาน", key="l_user").strip()
@@ -101,7 +106,7 @@ if not st.session_state.logged_in_user:
         else:
           st.warning("⚠️ กรุณากรอกข้อมูลให้ครบถ้วน")
 
-    # Tab 2: สมัครสมาชิก[cite: 3]
+    # Tab 2: สมัครสมาชิก
     with auth_tab2:
       st.subheader("สร้างบัญชีใหม่")
       reg_user = st.text_input("👤 กำหนดชื่อผู้ใช้งาน", key="r_user").strip()
@@ -133,7 +138,7 @@ if not st.session_state.logged_in_user:
   st.stop() 
 
 # =====================================================================
-# ส่วนที่ 2: หน้าหลักหลัง Login[cite: 3]
+# ส่วนที่ 2: หน้าหลักหลัง Login
 # =====================================================================
 clean_user = st.session_state.logged_in_user
 
@@ -175,7 +180,7 @@ if st.sidebar.button("🚪 ออกจากระบบ", use_container_width=
 
 
 # ==========================================
-# โหมดที่ 1: งานของฉัน & จัดการ (My Work Log)[cite: 3]
+# โหมดที่ 1: งานของฉัน & จัดการ (My Work Log)
 # ==========================================
 if nav_mode == "📁 งานของฉัน & จัดการพอร์ต":
   st.markdown(f"<div class='main-title'>📁 พอร์ตโฟลิโอและบันทึกงานของคุณ</div>", unsafe_allow_html=True)
@@ -185,7 +190,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
   with col_p1:
     avatar_img = user_profile.get("avatar", "")
     if avatar_img:
-      # ใช้ฟังก์ชัน optimize รูปโปรไฟล์[cite: 3]
       optimized_avatar = optimize_cloudinary_url(avatar_img, width=200)
       st.image(optimized_avatar, width=120)
     else:
@@ -258,11 +262,30 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
 
   st.divider()
   st.subheader("📚 ประวัติผลงานทั้งหมดของคุณ")
-  user_logs = list(collection.find({"author": clean_user}).sort("created_at", -1))
 
-  if len(user_logs) == 0:
+  # --- ระบบ Pagination (แบ่งหน้าแสดงผลสำหรับปัญหาที่ 3) ---
+  ITEMS_PER_PAGE = 5
+  total_user_logs = collection.count_documents({"author": clean_user})
+
+  if total_user_logs == 0:
     st.info("ยังไม่มีประวัติบันทึกงาน เริ่มเพิ่มข้อมูลกันได้เลยที่ฟอร์มด้านบน!")
   else:
+    total_pages = (total_user_logs + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+    
+    if total_pages > 1:
+      current_page = st.selectbox("📄 เลือกหน้าแสดงผล", range(1, total_pages + 1), format_func=lambda x: f"หน้าที่ {x} (จากทั้งหมด {total_pages} หน้า)")
+    else:
+      current_page = 1
+      
+    skip_count = (current_page - 1) * ITEMS_PER_PAGE
+    
+    user_logs = list(
+        collection.find({"author": clean_user})
+        .sort("created_at", -1)
+        .skip(skip_count)
+        .limit(ITEMS_PER_PAGE)
+    )
+
     for log in user_logs:
       with st.expander(f"📌 [{log['category']}] {log['title']} ({log['date']})"):
         
@@ -282,7 +305,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             for att_url in attachments_to_show:
               lower_url = att_url.lower()
               if any(ext in lower_url for ext in [".png", ".jpg", ".jpeg", ".webp"]):
-                # ใช้ฟังก์ชัน optimize รูปภาพแนบ[cite: 3]
                 optimized_img_url = optimize_cloudinary_url(att_url, width=800)
                 st.image(optimized_img_url, width=400)
               elif any(ext in lower_url for ext in [".mp4", ".mov", ".avi"]):
@@ -358,7 +380,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
               st.rerun()
 
 # ==========================================
-# โหมดที่ 2: เยี่ยมชมโปรไฟล์เพื่อนๆ (Explore)[cite: 3]
+# โหมดที่ 2: เยี่ยมชมโปรไฟล์เพื่อนๆ (Explore)
 # ==========================================
 elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์เพื่อนๆ":
   st.markdown("<div class='main-title'>🌐 พื้นที่สำรวจและเยี่ยมชมผลงานเพื่อนๆ</div>", unsafe_allow_html=True)
@@ -391,11 +413,26 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
 
       st.divider()
       st.subheader(f"📚 ผลงานทั้งหมดของ {selected_friend}")
-      friend_logs = list(collection.find({"author": selected_friend}).sort("created_at", -1))
-
-      if len(friend_logs) == 0:
+      
+      # ระบบ Pagination สำหรับหน้าเพื่อนเช่นเดียวกัน
+      friend_total_logs = collection.count_documents({"author": selected_friend})
+      if friend_total_logs == 0:
         st.info(f"เพื่อนชื่อ '{selected_friend}' ยังไม่มีประวัติงานบันทึกไว้ครับ")
       else:
+        friend_total_pages = (friend_total_logs + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+        if friend_total_pages > 1:
+          friend_current_page = st.selectbox("📄 เลือกหน้าผลงานเพื่อน", range(1, friend_total_pages + 1), format_func=lambda x: f"หน้าที่ {x} (จากทั้งหมด {friend_total_pages} หน้า)", key="friend_page_select")
+        else:
+          friend_current_page = 1
+          
+        friend_skip = (friend_current_page - 1) * ITEMS_PER_PAGE
+        friend_logs = list(
+            collection.find({"author": selected_friend})
+            .sort("created_at", -1)
+            .skip(friend_skip)
+            .limit(ITEMS_PER_PAGE)
+        )
+
         for log in friend_logs:
           with st.expander(f"📌 [{log['category']}] {log['title']} ({log['date']})"):
             st.write(f"**รายละเอียด:** {log['content']}")
