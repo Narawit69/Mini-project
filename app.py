@@ -287,7 +287,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
           st.markdown("---")
           col_act1, col_act2 = st.columns(2)
           with col_act1:
-            if st.button("✏️ แก้ไขบันทึกลงทะเบียนนี้", key=f"btn_edit_{log['_id']}", use_container_width=True):
+            if st.button("✏️ แก้ไขบันทึกนี้", key=f"btn_edit_{log['_id']}", use_container_width=True):
               st.session_state[edit_key] = True
               st.rerun()
           with col_act2:
