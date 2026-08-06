@@ -81,7 +81,7 @@ with st.form("worklog_form"):
 
 st.divider()
 
-# --- ส่วนที่ B: แสดงรายการบันทึกการทำงานทั้งหมด (พร้อมระบบกรองและตรวจสอบสิทธิ์) ---
+# --- ส่วนที่ B: แสดงรายการบันทึกการทำงานทั้งหมด (พร้อมระบบกรองและตรวจสอบสิทธิ์แบบแม่นยำ) ---
 st.subheader("📚 ประวัติบันทึกการทำงาน")
 
 # ช่องค้นหา/กรองข้อมูลตามชื่อ
@@ -89,11 +89,14 @@ search_author = st.text_input("🔍 พิมพ์ชื่อของคุ�
 
 if search_author:
   clean_search_author = search_author.strip()
-  # ดึงข้อมูลเฉพาะของชื่อที่ระบุ (ค้นหาแบบไม่สนตัวพิมพ์เล็ก-ใหญ่)
-  logs = list(collection.find({"author": {"$regex": clean_search_author, "$options": "i"}}).sort("created_at", -1))
+  
+  # ใช้การค้นหาแบบตรงกันทุกตัวอักษร (แต่ไม่สนตัวพิมพ์เล็ก-ใหญ่ด้วย regex แบบระบุขอบเขตสมบูรณ์)
+  # โดยใช้ ^ และ $ ครอบ เพื่อบังคับให้ชื่อต้องตรงกันเป๊ะๆ ห้ามมีคำเกิน
+  exact_regex = f"^{clean_search_author}$"
+  logs = list(collection.find({"author": {"$regex": exact_regex, "$options": "i"}}).sort("created_at", -1))
   
   if len(logs) == 0:
-    st.info(f"ยังไม่พบข้อมูลบันทึกของชื่อ '{search_author}' ครับ")
+    st.info(f"ยังไม่พบข้อมูลบันทึกของชื่อ '{search_author}' ครับ (โปรดตรวจสอบการสะกดชื่อให้ตรงกับตอนบันทึก)")
   else:
     st.write(f"ผลการค้นหาของ: **{search_author}** (พบ {len(logs)} รายการ)")
     for log in logs:
@@ -112,7 +115,8 @@ if search_author:
             elif log["attachment"].lower().endswith(("mp4", "mov", "avi")):
               st.video(file_path)
 
-        # --- ตรวจสอบสิทธิ์: ให้แสดงปุ่มลบเฉพาะ "เจ้าของโพสต์" ตัวจริงเท่านั้น ---
+        # --- ตรวจสอบสิทธิ์แบบเข้มงวดที่สุด ---
+        # ต้องพิมพ์ชื่อสะกดตรงกับเจ้าของโพสต์เป๊ะๆ เท่านั้น ถึงจะแสดงปุ่มลบ
         if clean_search_author.lower() == log_author.lower():
           if st.button("🗑️ ลบบันทึกนี้", key=str(log["_id"])):
             collection.delete_one({"_id": log["_id"]})
