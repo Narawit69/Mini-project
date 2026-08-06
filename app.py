@@ -1,10 +1,13 @@
 from datetime import datetime
 import hashlib
+import io
 import os
 import streamlit as st
 from pymongo import MongoClient
 import cloudinary
 import cloudinary.uploader
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
 # 1. เชื่อมต่อกับ MongoDB
 mongo_uri = st.secrets["MONGO_URI"]
@@ -13,7 +16,7 @@ db = client["worklog_db"]
 collection = db["logs"]
 profile_collection = db["profiles"]
 user_auth_collection = db["users"]
-visitor_collection = db["visitors"] # Collection สำหรับเก็บประวัติผู้เข้าชมโปรไฟล์
+visitor_collection = db["visitors"]
 
 # สร้าง Index เพื่อให้การค้นหาและเรียงลำดับข้อมูลใน MongoDB ทำงานได้รวดเร็วขึ้น
 collection.create_index([("author", 1), ("created_at", -1)])
@@ -38,6 +41,41 @@ def optimize_cloudinary_url(url, width=None):
       transformations += f",w_{width}"
     return f"{parts[0]}/upload/{transformations}/{parts[1]}"
   return url
+
+# ฟังก์ชันสำหรับสร้างรายงาน PDF ด้วย ReportLab
+def generate_pdf_report(username, logs_data):
+  buffer = io.BytesIO()
+  p = canvas.Canvas(buffer, pagesize=letter)
+  width, height = letter
+  
+  p.setFont("Helvetica-Bold", 16)
+  p.drawString(50, height - 50, f"Work Log Report - {username}")
+  
+  p.setFont("Helvetica", 10)
+  p.drawString(50, height - 70, f"Generated Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+  p.line(50, height - 80, width - 50, height - 80)
+  
+  y_position = height - 110
+  p.setFont("Helvetica", 10)
+  
+  for idx, log in enumerate(logs_data, 1):
+    if y_position < 100:
+      p.showPage()
+      p.setFont("Helvetica", 10)
+      y_position = height - 50
+      
+    p.setFont("Helvetica-Bold", 11)
+    p.drawString(50, y_position, f"{idx}. [{log.get('category')}] {log.get('title')} ({log.get('date')})")
+    y_position -= 18
+    
+    p.setFont("Helvetica", 10)
+    content_text = log.get('content', '')
+    p.drawString(70, y_position, f"Details: {content_text[:80]}...")
+    y_position -= 30
+    
+  p.save()
+  buffer.seek(0)
+  return buffer.getvalue()
 
 # ตั้งค่าหน้าเว็บแบบ Wide Mode
 st.set_page_config(page_title="My Daily Work Log", page_icon="💻", layout="wide")
@@ -89,7 +127,6 @@ if not st.session_state.logged_in_user:
     st.markdown("<div class='card-box'>", unsafe_allow_html=True)
     auth_tab1, auth_tab2 = st.tabs(["🔑 เข้าสู่ระบบ", "📝 สมัครสมาชิก"])
 
-    # Tab 1: เข้าสู่ระบบ
     with auth_tab1:
       st.subheader("ยินดีต้อนรับกลับมา!")
       login_user = st.text_input("👤 ชื่อผู้ใช้งาน", key="l_user").strip()
@@ -108,7 +145,6 @@ if not st.session_state.logged_in_user:
         else:
           st.warning("⚠️ กรุณากรอกข้อมูลให้ครบถ้วน")
 
-    # Tab 2: สมัครสมาชิก
     with auth_tab2:
       st.subheader("สร้างบัญชีใหม่")
       reg_user = st.text_input("👤 กำหนดชื่อผู้ใช้งาน", key="r_user").strip()
@@ -200,7 +236,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
     st.subheader(f"ผู้ใช้งาน: {clean_user}")
     st.write(f"**Bio:** {user_profile.get('bio', 'ยังไม่มีคำอธิบาย')}")
 
-  # --- [ฟีเจอร์ใหม่] กล่องจดหมายแจ้งเตือนผู้เข้าชมโปรไฟล์ (Profile Viewers Inbox) ---
+  # กล่องจดหมายผู้เข้าชมโปรไฟล์
   st.markdown("---")
   st.subheader("📬 กล่องจดหมายผู้เข้าชมโปรไฟล์ (Profile Viewers)")
   
@@ -280,7 +316,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
 
   st.divider()
   
-  # --- [ฟีเจอร์ที่ 2] ช่องค้นหาและตัวกรองสำหรับเจ้าของพอร์ต ---
+  # ค้นหาและกรองข้อมูล
   st.subheader("🔍 ค้นหาและกรองข้อมูลผลงานของคุณ")
   f_search_col1, f_search_col2 = st.columns([2, 1])
   with f_search_col1:
@@ -289,7 +325,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
     category_options = ["ทั้งหมด", "Coding", "Meeting", "Debugging", "Learning", "Other"]
     selected_category_filter = st.selectbox("📌 กรองตามหมวดหมู่:", category_options)
 
-  # ประกอบร่างเงื่อนไข Query สำหรับ MongoDB
   query_filter = {"author": clean_user}
   if selected_category_filter != "ทั้งหมด":
     query_filter["category"] = selected_category_filter
@@ -299,7 +334,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
         {"content": {"$regex": search_keyword, "$options": "i"}}
     ]
 
-  # --- [ฟีเจอร์ที่ 1] Dashboard สรุปสถิติภาพรวม (ของเจ้าของ) ---
+  # Dashboard สรุปสถิติ
   st.markdown("---")
   st.subheader("📊 แดชบอร์ดสรุปสถิติผลงานของคุณ")
 
@@ -331,25 +366,38 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
 
   st.markdown("---")
 
-  # ส่วนดาวน์โหลด CSV Report (อัปให้สอดคล้องกับข้อมูลที่ถูกกรอง)
+  # ส่วนดาวน์โหลดรายงาน (CSV & PDF)
   all_user_logs_for_export = list(collection.find(query_filter).sort("created_at", -1))
   if all_user_logs_for_export:
-    csv_rows = ["Date,Category,Title,Content"]
-    for log_item in all_user_logs_for_export:
-      safe_title = log_item.get('title', '').replace('"', '""')
-      safe_content = log_item.get('content', '').replace('"', '""').replace('\n', ' ')
-      csv_rows.append(f"\"{log_item.get('date')}\",\"{log_item.get('category')}\",\"{safe_title}\",\"{safe_content}\"")
+    col_d1, col_d2 = st.columns(2)
     
-    csv_data = "\n".join(csv_rows)
-    csv_bytes = ('\ufeff' + csv_data).encode('utf-8')
-    
-    st.download_button(
-        label="📥 ดาวน์โหลดผลงานที่กรองแล้วเป็น CSV",
-        data=csv_bytes,
-        file_name=f"work_log_filtered_{clean_user}.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
+    with col_d1:
+      csv_rows = ["Date,Category,Title,Content"]
+      for log_item in all_user_logs_for_export:
+        safe_title = log_item.get('title', '').replace('"', '""')
+        safe_content = log_item.get('content', '').replace('"', '""').replace('\n', ' ')
+        csv_rows.append(f"\"{log_item.get('date')}\",\"{log_item.get('category')}\",\"{safe_title}\",\"{safe_content}\"")
+      
+      csv_data = "\n".join(csv_rows)
+      csv_bytes = ('\ufeff' + csv_data).encode('utf-8')
+      
+      st.download_button(
+          label="📥 ดาวน์โหลดผลงานเป็น CSV",
+          data=csv_bytes,
+          file_name=f"work_log_filtered_{clean_user}.csv",
+          mime="text/csv",
+          use_container_width=True
+      )
+
+    with col_d2:
+      pdf_bytes = generate_pdf_report(clean_user, all_user_logs_for_export)
+      st.download_button(
+          label="📄 ดาวน์โหลดรายงาน PDF",
+          data=pdf_bytes,
+          file_name=f"work_log_report_{clean_user}.pdf",
+          mime="application/pdf",
+          use_container_width=True
+      )
 
   st.subheader("📚 รายการผลงานของคุณ")
 
@@ -494,7 +542,6 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
     selected_friend = st.selectbox("🔍 เลือกรายชื่อเพื่อนที่คุณต้องการเยี่ยมชม:", other_authors)
     
     if selected_friend:
-      # --- [ฟีเจอร์ใหม่] บันทึกประวัติผู้เข้าชมโปรไฟล์ (Profile Viewers) แบบ Throttle ไม่ให้เบิ้ลรัวๆ ---
       if selected_friend != clean_user:
         visitor_session_key = f"visited_{selected_friend}"
         if visitor_session_key not in st.session_state:
@@ -522,7 +569,6 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
 
       st.divider()
       
-      # --- [ฟีเจอร์ที่ 2] ช่องค้นหาและตัวกรองสำหรับหน้าเพื่อน ---
       st.subheader(f"🔍 ค้นหาผลงานของ {selected_friend}")
       f_f_col1, f_f_col2 = st.columns([2, 1])
       with f_f_col1:
@@ -540,7 +586,6 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
             {"content": {"$regex": friend_search_keyword, "$options": "i"}}
         ]
 
-      # --- [ฟีเจอร์ที่ 1] Dashboard สรุปสถิติภาพรวม (สำหรับเพื่อนที่มาเยี่ยมชม) ---
       st.markdown("---")
       st.subheader(f"📊 แดชบอร์ดสรุปสถิติผลงานของ {selected_friend}")
 
@@ -611,7 +656,6 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
                 else:
                   st.markdown(f"📄 [คลิกเพื่อเปิดดูไฟล์เอกสาร]({att_url})", unsafe_allow_html=True)
 
-            # --- [ฟีเจอร์ที่ 3] ระบบ Like / Reaction ---
             likes_list = log.get("likes", [])
             total_likes = len(likes_list)
             is_liked_by_me = clean_user in likes_list
