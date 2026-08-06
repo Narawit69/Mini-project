@@ -40,25 +40,31 @@ with st.form("worklog_form"):
 
   if submitted:
     if title and content:
-      filename = ""
-      # ถ้ามีการอัปโหลดไฟล์ ให้บันทึกไฟล์เก็บไว้ใน Volume Directory
-      if uploaded_file is not None:
-        filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uploaded_file.name}"
-        file_path = os.path.join(UPLOAD_DIR, filename)
-        with open(file_path, "wb") as f:
-          f.write(uploaded_file.getbuffer())
+      # เช็กป้องกันการบันทึกซ้ำซ้อนในรอบเดียว
+      if "last_submitted_title" not in st.session_state or st.session_state.last_submitted_title != (title + str(datetime.now().second)):
+        
+        filename = ""
+        if uploaded_file is not None:
+          filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uploaded_file.name}"
+          file_path = os.path.join(UPLOAD_DIR, filename)
+          with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
 
-      # บันทึกข้อมูล Text ลง MongoDB
-      log_data = {
-          "date": str(log_date),
-          "title": title,
-          "category": category,
-          "content": content,
-          "attachment": filename,
-          "created_at": datetime.now(),
-      }
-      collection.insert_one(log_data)
-      st.success("บันทึกข้อมูลสำเร็จเรียบร้อยแล้ว! 🎉")
+        log_data = {
+            "date": str(log_date),
+            "title": title,
+            "category": category,
+            "content": content,
+            "attachment": filename,
+            "created_at": datetime.now(),
+        }
+        collection.insert_one(log_data)
+        
+        # บันทึกสถานะไว้กันเบิ้ล
+        st.session_state.last_submitted_title = title + str(datetime.now().second)
+        
+        st.success("บันทึกข้อมูลสำเร็จเรียบร้อยแล้ว! 🎉")
+        st.rerun()
     else:
       st.warning("กรุณากรอกหัวข้อและรายละเอียดให้ครบถ้วนครับ")
 
