@@ -31,7 +31,7 @@ with st.form("worklog_form"):
   log_date = st.date_input("วันที่ปฏิบัติงาน", datetime.today())
   title = st.text_input("หัวข้อเรื่อง / งานที่ทำ")
   category = st.selectbox(
-      "หมวดหมู่งาน", ["Coding", "Meeting", "Debugging", "Other"]
+      "หมวดหมู่งาน", ["Coding", "Meeting", "Debugging", "Learning", "Other"]
   )
   content = st.text_area("รายละเอียดการทำงาน")
 
