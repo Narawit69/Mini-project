@@ -262,9 +262,30 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
         st.warning("กรุณากรอกหัวข้อและรายละเอียดให้ครบถ้วนครับ")
 
   st.divider()
+  
+  # --- [ฟีเจอร์ที่ 2] ช่องค้นหาและตัวกรองสำหรับเจ้าของพอร์ต ---
+  st.subheader("🔍 ค้นหาและกรองข้อมูลผลงานของคุณ")
+  f_search_col1, f_search_col2 = st.columns([2, 1])
+  with f_search_col1:
+    search_keyword = st.text_input("🔎 ค้นหาจากหัวข้อหรือเนื้อหา (Keyword):", "").strip()
+  with f_search_col2:
+    category_options = ["ทั้งหมด", "Coding", "Meeting", "Debugging", "Learning", "Other"]
+    selected_category_filter = st.selectbox("📌 กรองตามหมวดหมู่:", category_options)
 
-  # ส่วนดาวน์โหลด CSV Report
-  all_user_logs_for_export = list(collection.find({"author": clean_user}).sort("created_at", -1))
+  # ประกอบร่างเงื่อนไข Query สำหรับ MongoDB
+  query_filter = {"author": clean_user}
+  if selected_category_filter != "ทั้งหมด":
+    query_filter["category"] = selected_category_filter
+  if search_keyword:
+    query_filter["$or"] = [
+        {"title": {"$regex": search_keyword, "$options": "i"}},
+        {"content": {"$regex": search_keyword, "$options": "i"}}
+    ]
+
+  st.divider()
+
+  # ส่วนดาวน์โหลด CSV Report (อัปให้สอดคล้องกับข้อมูลที่ถูกกรอง)
+  all_user_logs_for_export = list(collection.find(query_filter).sort("created_at", -1))
   if all_user_logs_for_export:
     csv_rows = ["Date,Category,Title,Content"]
     for log_item in all_user_logs_for_export:
@@ -276,20 +297,20 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
     csv_bytes = ('\ufeff' + csv_data).encode('utf-8')
     
     st.download_button(
-        label="📥 ดาวน์โหลดประวัติผลงานทั้งหมดเป็น CSV",
+        label="📥 ดาวน์โหลดผลงานที่กรองแล้วเป็น CSV",
         data=csv_bytes,
-        file_name=f"work_log_report_{clean_user}.csv",
+        file_name=f"work_log_filtered_{clean_user}.csv",
         mime="text/csv",
         use_container_width=True
     )
 
-  st.subheader("📚 ประวัติผลงานทั้งหมดของคุณ")
+  st.subheader("📚 รายการผลงานของคุณ")
 
   ITEMS_PER_PAGE = 5
-  total_user_logs = collection.count_documents({"author": clean_user})
+  total_user_logs = collection.count_documents(query_filter)
 
   if total_user_logs == 0:
-    st.info("ยังไม่มีประวัติบันทึกงาน เริ่มเพิ่มข้อมูลกันได้เลยที่ฟอร์มด้านบน!")
+    st.info("ไม่พบข้อมูลผลงานที่ตรงกับเงื่อนไขการค้นหาครับ")
   else:
     total_pages = (total_user_logs + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
     
@@ -301,7 +322,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
     skip_count = (current_page - 1) * ITEMS_PER_PAGE
     
     user_logs = list(
-        collection.find({"author": clean_user})
+        collection.find(query_filter)
         .sort("created_at", -1)
         .skip(skip_count)
         .limit(ITEMS_PER_PAGE)
@@ -442,11 +463,31 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
         st.write(f"**Bio:** {friend_profile.get('bio', 'ยังไม่มีคำอธิบาย')}")
 
       st.divider()
+      
+      # --- [ฟีเจอร์ที่ 2] ช่องค้นหาและตัวกรองสำหรับหน้าเพื่อน ---
+      st.subheader(f"🔍 ค้นหาผลงานของ {selected_friend}")
+      f_f_col1, f_f_col2 = st.columns([2, 1])
+      with f_f_col1:
+        friend_search_keyword = st.text_input("🔎 ค้นหาจากหัวข้อหรือเนื้อหาของเพื่อน:", "", key="f_search").strip()
+      with f_f_col2:
+        friend_category_options = ["ทั้งหมด", "Coding", "Meeting", "Debugging", "Learning", "Other"]
+        friend_selected_category = st.selectbox("📌 กรองตามหมวดหมู่เพื่อน:", friend_category_options, key="f_cat")
+
+      friend_query_filter = {"author": selected_friend}
+      if friend_selected_category != "ทั้งหมด":
+        friend_query_filter["category"] = friend_selected_category
+      if friend_search_keyword:
+        friend_query_filter["$or"] = [
+            {"title": {"$regex": friend_search_keyword, "$options": "i"}},
+            {"content": {"$regex": friend_search_keyword, "$options": "i"}}
+        ]
+
+      st.divider()
       st.subheader(f"📚 ผลงานทั้งหมดของ {selected_friend}")
       
-      friend_total_logs = collection.count_documents({"author": selected_friend})
+      friend_total_logs = collection.count_documents(friend_query_filter)
       if friend_total_logs == 0:
-        st.info(f"เพื่อนชื่อ '{selected_friend}' ยังไม่มีประวัติงานบันทึกไว้ครับ")
+        st.info(f"ไม่พบผลงานที่ตรงกับเงื่อนไขการค้นหาของเพื่อนคนนี้ครับ")
       else:
         friend_total_pages = (friend_total_logs + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
         if friend_total_pages > 1:
@@ -456,7 +497,7 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
           
         friend_skip = (friend_current_page - 1) * ITEMS_PER_PAGE
         friend_logs = list(
-            collection.find({"author": selected_friend})
+            collection.find(friend_query_filter)
             .sort("created_at", -1)
             .skip(friend_skip)
             .limit(ITEMS_PER_PAGE)
