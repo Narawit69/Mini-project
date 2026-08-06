@@ -3,13 +3,13 @@ import os
 import streamlit as st
 from pymongo import MongoClient
 
-# 1. เชื่อมต่อกับ MongoDB (ที่รันอยู่บน Docker พอร์ต 27017)
+# 1. เชื่อมต่อกับ MongoDB
 mongo_uri = st.secrets["MONGO_URI"]
 client = MongoClient(mongo_uri)
 db = client["worklog_db"]  # ชื่อฐานข้อมูล
 collection = db["logs"]  # ชื่อ Collection
 
-# 2. กำหนด Path สำหรับเก็บไฟล์ (จำลองการเก็บลง Docker Volume / โฟลเดอร์ในเครื่อง)
+# 2. กำหนด Path สำหรับเก็บไฟล์
 UPLOAD_DIR = "./data_volumes"
 if not os.path.exists(UPLOAD_DIR):
   os.makedirs(UPLOAD_DIR)
@@ -40,9 +40,13 @@ with st.form("worklog_form"):
 
   if submitted:
     if title and content:
-      # เช็กป้องกันการบันทึกซ้ำซ้อนในรอบเดียว
-      if "last_submitted_title" not in st.session_state or st.session_state.last_submitted_title != (title + str(datetime.now().second)):
-        
+      # ป้องกันการบันทึกซ้ำด้วยการเช็กสถานะการกดใน session_state
+      if "form_submitted" not in st.session_state:
+        st.session_state.form_submitted = False
+
+      if not st.session_state.form_submitted:
+        st.session_state.form_submitted = True
+
         filename = ""
         if uploaded_file is not None:
           filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uploaded_file.name}"
@@ -60,10 +64,10 @@ with st.form("worklog_form"):
         }
         collection.insert_one(log_data)
         
-        # บันทึกสถานะไว้กันเบิ้ล
-        st.session_state.last_submitted_title = title + str(datetime.now().second)
-        
         st.success("บันทึกข้อมูลสำเร็จเรียบร้อยแล้ว! 🎉")
+        
+        # รีเซ็ตสถานะแล้วสั่งรันใหม่
+        st.session_state.form_submitted = False
         st.rerun()
     else:
       st.warning("กรุณากรอกหัวข้อและรายละเอียดให้ครบถ้วนครับ")
@@ -73,40 +77,7 @@ st.divider()
 # --- ส่วนที่ B: แสดงรายการบันทึกการทำงานทั้งหมดจาก MongoDB ---
 st.subheader("📚 ประวัติบันทึกการทำงานทั้งหมด")
 
-# ดึงข้อมูลจาก MongoDB เรียงจากล่าสุดไปเก่าสุด
-logs = list(collection.find().sort("created_at", -1))
-
-if len(logs) == 0:
-    st.info("ยังไม่มีข้อมูลบันทึกการทำงาน เริ่มเพิ่มข้อมูลกันเลย!")
-else:
-    for log in logs:
-        with st.expander(f"📌 [{log['category']}] {log['title']} ({log['date']})"):
-            st.write(f"**รายละเอียด:** {log['content']}")
-            if log.get("attachment"):
-                st.write(f"📎 **ไฟล์แนบ:** {log['attachment']}")
-                # หากต้องการแสดงรูปภาพที่อัปโหลด (ถ้าเป็นไฟล์รูป)
-                file_path = os.path.join(UPLOAD_DIR, log["attachment"])
-                if os.path.exists(file_path) and log["attachment"].lower().endswith(
-                    ("png", "jpg", "jpeg")
-                ):
-                    st.image(file_path, width=400)
-
-            # --- เพิ่มปุ่มสำหรับลบข้อมูล ---
-            # ใช้ _id ของ MongoDB มาสร้าง key ไม่ให้ซ้ำกัน
-            if st.button("🗑️ ลบบันทึกนี้", key=str(log["_id"])):
-                # ลบข้อมูลออกจาก MongoDB โดยอิงตาม _id
-                collection.delete_one({"_id": log["_id"]})
-                
-                # หากมีไฟล์แนบ ให้ลบไฟล์ออกจากโฟลเดอร์ด้วย (ถ้ามี)
-                if log.get("attachment"):
-                    target_file = os.path.join(UPLOAD_DIR, log["attachment"])
-                    if os.path.exists(target_file):
-                        os.remove(target_file)
-                        
-                st.success("ลบข้อมูลสำเร็จแล้ว!")
-                st.rerun()  # สั่งรีเฟรชหน้าเว็บเพื่อให้รายการที่ถูกลบหายไปทันที
-
-# ดึงข้อมูลจาก MongoDB เรียงจากล่าสุดไปเก่าสุด
+# ดึงข้อมูลจาก MongoDB เรียงจากล่าสุดไปเก่าสุด (มีชุดเดียวถูกต้องแล้ว)
 logs = list(collection.find().sort("created_at", -1))
 
 if len(logs) == 0:
@@ -123,3 +94,17 @@ else:
             ("png", "jpg", "jpeg")
         ):
           st.image(file_path, width=400)
+
+      # --- ปุ่มสำหรับลบข้อมูล ---
+      if st.button("🗑️ ลบบันทึกนี้", key=str(log["_id"])):
+        # ลบข้อมูลออกจาก MongoDB โดยอิงตาม _id
+        collection.delete_one({"_id": log["_id"]})
+        
+        # หากมีไฟล์แนบ ให้ลบไฟล์ออกจากโฟลเดอร์ด้วย (ถ้ามี)
+        if log.get("attachment"):
+          target_file = os.path.join(UPLOAD_DIR, log["attachment"])
+          if os.path.exists(target_file):
+            os.remove(target_file)
+                
+        st.success("ลบข้อมูลสำเร็จแล้ว!")
+        st.rerun()  # สั่งรีเฟรชหน้าเว็บเพื่อให้รายการที่ถูกลบหายไปทันที
