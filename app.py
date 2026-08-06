@@ -249,6 +249,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
               "content": content,
               "attachments": saved_file_urls,
               "comments": [],
+              "likes": [],
               "created_at": datetime.now(),
           }
           collection.insert_one(log_data)
@@ -262,7 +263,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
 
   st.divider()
 
-  # --- [หัวข้อที่ 5] ส่วนสำหรับสร้างและดาวน์โหลดไฟล์ CSV รายงานผลงาน ---
+  # ส่วนดาวน์โหลด CSV Report
   all_user_logs_for_export = list(collection.find({"author": clean_user}).sort("created_at", -1))
   if all_user_logs_for_export:
     csv_rows = ["Date,Category,Title,Content"]
@@ -413,7 +414,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
 # ==========================================
 elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์เพื่อนๆ":
   st.markdown("<div class='main-title'>🌐 พื้นที่สำรวจและเยี่ยมชมผลงานเพื่อนๆ</div>", unsafe_allow_html=True)
-  st.write("เลือกดูโปรไฟล์และผลงานของเพื่อนร่วมทีม พร้อมส่งข้อความคอมเมนต์ให้กำลังใจกันได้ที่นี่ครับ!")
+  st.write("เลือกดูโปรไฟล์และผลงานของเพื่อนร่วมทีม พร้อมส่งข้อความคอมเมนต์และกดไลก์ให้กำลังใจกันได้ที่นี่ครับ!")
   st.markdown("<br>", unsafe_allow_html=True)
 
   all_authors = collection.distinct("author")
@@ -481,8 +482,29 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
                 else:
                   st.markdown(f"📄 [คลิกเพื่อเปิดดูไฟล์เอกสาร]({att_url})", unsafe_allow_html=True)
 
-            comments = log.get("comments", [])
+            # --- [ฟีเจอร์ที่ 3] ระบบ Like / Reaction ---
+            likes_list = log.get("likes", [])
+            total_likes = len(likes_list)
+            is_liked_by_me = clean_user in likes_list
+
             st.markdown("---")
+            col_like1, col_like2 = st.columns([1, 5])
+            with col_like1:
+              like_btn_label = f"❤️ {total_likes}" if is_liked_by_me else f"🤍 {total_likes}"
+              if st.button(like_btn_label, key=f"like_{log['_id']}", use_container_width=True):
+                if is_liked_by_me:
+                  collection.update_one(
+                      {"_id": log["_id"]},
+                      {"$pull": {"likes": clean_user}}
+                  )
+                else:
+                  collection.update_one(
+                      {"_id": log["_id"]},
+                      {"$addToSet": {"likes": clean_user}}
+                  )
+                st.rerun()
+
+            comments = log.get("comments", [])
             st.markdown("💬 **ความคิดเห็นทั้งหมด:**")
             if comments:
               for c in comments:
@@ -510,4 +532,4 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
                 else:
                   st.warning("กรุณาพิมพ์ข้อความคอมเมนต์ก่อนส่งครับ")
             
-            st.caption("🔒 (โหมดเยี่ยมชม: คุณสามารถดูและคอมเมนต์ได้เท่านั้น ไม่สามารถแก้ไขหรือลบโพสต์นี้ได้)")
+            st.caption("🔒 (โหมดเยี่ยมชม: คุณสามารถดู, กดไลก์ และคอมเมนต์ได้เท่านั้น)")
