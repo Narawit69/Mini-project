@@ -282,7 +282,37 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
         {"content": {"$regex": search_keyword, "$options": "i"}}
     ]
 
-  st.divider()
+  # --- [ฟีเจอร์ที่ 1] Dashboard สรุปสถิติภาพรวม (ของเจ้าของ) ---
+  st.markdown("---")
+  st.subheader("📊 แดชบอร์ดสรุปสถิติผลงานของคุณ")
+
+  dashboard_logs = list(collection.find(query_filter))
+  total_count = len(dashboard_logs)
+
+  if total_count > 0:
+    cat_counts = {}
+    for item in dashboard_logs:
+      c = item.get("category", "Other")
+      cat_counts[c] = cat_counts.get(c, 0) + 1
+
+    d_col1, d_col2, d_col3 = st.columns(3)
+    with d_col1:
+      st.metric("📌 จำนวนงานทั้งหมด (รายการ)", total_count)
+    with d_col2:
+      top_cat = max(cat_counts, key=cat_counts.get) if cat_counts else "-"
+      st.metric("🔥 หมวดหมู่ยอดฮิต", top_cat)
+    with d_col3:
+      st.metric("🏷️ หมวดหมู่ที่ใช้งาน", f"{len(cat_counts)} ประเภท")
+
+    st.markdown("**📈 สัดส่วนงานแยกตามหมวดหมู่:**")
+    cat_cols = st.columns(len(cat_counts) if len(cat_counts) > 0 else 1)
+    for idx, (cat_name, count_val) in enumerate(cat_counts.items()):
+      with cat_cols[idx % len(cat_cols)]:
+        st.info(f"**{cat_name}**\n\n {count_val} รายการ")
+  else:
+    st.info("💡 ไม่มีข้อมูลเพียงพอสำหรับการสรุปสถิติในเงื่อนไขนี้")
+
+  st.markdown("---")
 
   # ส่วนดาวน์โหลด CSV Report (อัปให้สอดคล้องกับข้อมูลที่ถูกกรอง)
   all_user_logs_for_export = list(collection.find(query_filter).sort("created_at", -1))
@@ -482,7 +512,37 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
             {"content": {"$regex": friend_search_keyword, "$options": "i"}}
         ]
 
-      st.divider()
+      # --- [ฟีเจอร์ที่ 1] Dashboard สรุปสถิติภาพรวม (สำหรับเพื่อนที่มาเยี่ยมชม) ---
+      st.markdown("---")
+      st.subheader(f"📊 แดชบอร์ดสรุปสถิติผลงานของ {selected_friend}")
+
+      friend_dashboard_logs = list(collection.find(friend_query_filter))
+      friend_total_count = len(friend_dashboard_logs)
+
+      if friend_total_count > 0:
+        f_cat_counts = {}
+        for item in friend_dashboard_logs:
+          c = item.get("category", "Other")
+          f_cat_counts[c] = f_cat_counts.get(c, 0) + 1
+
+        fd_col1, fd_col2, fd_col3 = st.columns(3)
+        with fd_col1:
+          st.metric("📌 จำนวนงานทั้งหมดของเพื่อน", friend_total_count)
+        with fd_col2:
+          f_top_cat = max(f_cat_counts, key=f_cat_counts.get) if f_cat_counts else "-"
+          st.metric("🔥 หมวดหมู่ยอดฮิตของเพื่อน", f_top_cat)
+        with fd_col3:
+          st.metric("🏷️ หมวดหมู่ที่เพื่อนใช้งาน", f"{len(f_cat_counts)} ประเภท")
+
+        st.markdown(f"**📈 สัดส่วนงานของ {selected_friend} แยกตามหมวดหมู่:**")
+        f_cat_cols = st.columns(len(f_cat_counts) if len(f_cat_counts) > 0 else 1)
+        for idx, (cat_name, count_val) in enumerate(f_cat_counts.items()):
+          with f_cat_cols[idx % len(f_cat_cols)]:
+            st.info(f"**{cat_name}**\n\n {count_val} รายการ")
+      else:
+        st.info("💡 ไม่มีข้อมูลเพียงพอสำหรับการสรุปสถิติในเงื่อนไขนี้")
+
+      st.markdown("---")
       st.subheader(f"📚 ผลงานทั้งหมดของ {selected_friend}")
       
       friend_total_logs = collection.count_documents(friend_query_filter)
