@@ -35,9 +35,10 @@ with st.form("worklog_form"):
   )
   content = st.text_area("รายละเอียดการทำงาน")
 
-  # ช่องอัปโหลดไฟล์ (เช่น ภาพ Screenshot หรือโค้ด)
+  # ช่องอัปโหลดไฟล์ (รองรับรูปภาพ เอกสาร และวิดีโอ)
   uploaded_file = st.file_uploader(
-      "แนบไฟล์หลักฐาน (รูปภาพ/เอกสาร)", type=["png", "jpg", "jpeg", "pdf"]
+      "แนบไฟล์หลักฐาน (รูปภาพ/เอกสาร/วิดีโอ)", 
+      type=["png", "jpg", "jpeg", "pdf", "mp4", "mov", "avi"]
   )
 
   submitted = st.form_submit_button("บันทึกข้อมูล")
@@ -80,39 +81,48 @@ with st.form("worklog_form"):
 
 st.divider()
 
-# --- ส่วนที่ B: แสดงรายการบันทึกการทำงานทั้งหมด (พร้อมระบบกรองตามชื่อ) ---
+# --- ส่วนที่ B: แสดงรายการบันทึกการทำงานทั้งหมด (พร้อมระบบกรองและตรวจสอบสิทธิ์) ---
 st.subheader("📚 ประวัติบันทึกการทำงาน")
 
 # ช่องค้นหา/กรองข้อมูลตามชื่อ
 search_author = st.text_input("🔍 พิมพ์ชื่อของคุณเพื่อดูประวัติงานเฉพาะบุคคล:")
 
 if search_author:
-  # ดึงข้อมูลเฉพาะของชื่อที่ระบุ เรียงจากล่าสุดไปเก่าสุด
-  logs = list(collection.find({"author": {"$regex": search_author.strip(), "$options": "i"}}).sort("created_at", -1))
+  clean_search_author = search_author.strip()
+  # ดึงข้อมูลเฉพาะของชื่อที่ระบุ (ค้นหาแบบไม่สนตัวพิมพ์เล็ก-ใหญ่)
+  logs = list(collection.find({"author": {"$regex": clean_search_author, "$options": "i"}}).sort("created_at", -1))
   
   if len(logs) == 0:
     st.info(f"ยังไม่พบข้อมูลบันทึกของชื่อ '{search_author}' ครับ")
   else:
     st.write(f"ผลการค้นหาของ: **{search_author}** (พบ {len(logs)} รายการ)")
     for log in logs:
-      with st.expander(f"📌 [{log['category']}] {log['title']} ({log['date']}) — โดย: {log.get('author', 'ไม่ระบุชื่อ')}"):
+      log_author = log.get('author', 'ไม่ระบุชื่อ')
+      with st.expander(f"📌 [{log['category']}] {log['title']} ({log['date']}) — โดย: {log_author}"):
         st.write(f"**รายละเอียด:** {log['content']}")
+        
+        # แสดงไฟล์แนบ (แยกประเภท รูปภาพ หรือ วิดีโอ)
         if log.get("attachment"):
           st.write(f"📎 **ไฟล์แนบ:** {log['attachment']}")
           file_path = os.path.join(UPLOAD_DIR, log["attachment"])
-          if os.path.exists(file_path) and log["attachment"].lower().endswith(
-              ("png", "jpg", "jpeg")
-          ):
-            st.image(file_path, width=400)
+          
+          if os.path.exists(file_path):
+            if log["attachment"].lower().endswith(("png", "jpg", "jpeg")):
+              st.image(file_path, width=400)
+            elif log["attachment"].lower().endswith(("mp4", "mov", "avi")):
+              st.video(file_path)
 
-        # --- ปุ่มสำหรับลบข้อมูล ---
-        if st.button("🗑️ ลบบันทึกนี้", key=str(log["_id"])):
-          collection.delete_one({"_id": log["_id"]})
-          if log.get("attachment"):
-            target_file = os.path.join(UPLOAD_DIR, log["attachment"])
-            if os.path.exists(target_file):
-              os.remove(target_file)
-          st.success("ลบข้อมูลสำเร็จแล้ว!")
-          st.rerun()
+        # --- ตรวจสอบสิทธิ์: ให้แสดงปุ่มลบเฉพาะ "เจ้าของโพสต์" ตัวจริงเท่านั้น ---
+        if clean_search_author.lower() == log_author.lower():
+          if st.button("🗑️ ลบบันทึกนี้", key=str(log["_id"])):
+            collection.delete_one({"_id": log["_id"]})
+            if log.get("attachment"):
+              target_file = os.path.join(UPLOAD_DIR, log["attachment"])
+              if os.path.exists(target_file):
+                os.remove(target_file)
+            st.success("ลบข้อมูลสำเร็จแล้ว!")
+            st.rerun()
+        else:
+          st.caption("🔒 (คุณไม่มีสิทธิ์ลบบันทึกของผู้อื่น)")
 else:
-  st.info("💡 โปรดพิมพ์ชื่อของคุณในช่องค้นหาด้านบน เพื่อเรียกดูประวัติบันทึกงานส่วนตัวครับ")
+  st.info("💡 โปรดพิมพ์ชื่อของคุณในช่องค้นหาด้านบน เพื่อเรียกดูและจัดการประวัติบันทึกงานส่วนตัวครับ")
