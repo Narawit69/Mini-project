@@ -4,7 +4,8 @@ import streamlit as st
 from pymongo import MongoClient
 
 # 1. เชื่อมต่อกับ MongoDB (ที่รันอยู่บน Docker พอร์ต 27017)
-client = MongoClient("mongodb://localhost:27017/")
+mongo_uri = st.secrets["MONGO_URI"]
+client = MongoClient(mongo_uri)
 db = client["worklog_db"]  # ชื่อฐานข้อมูล
 collection = db["logs"]  # ชื่อ Collection
 
