@@ -261,6 +261,27 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
         st.warning("กรุณากรอกหัวข้อและรายละเอียดให้ครบถ้วนครับ")
 
   st.divider()
+
+  # --- [หัวข้อที่ 5] ส่วนสำหรับสร้างและดาวน์โหลดไฟล์ CSV รายงานผลงาน ---
+  all_user_logs_for_export = list(collection.find({"author": clean_user}).sort("created_at", -1))
+  if all_user_logs_for_export:
+    csv_rows = ["Date,Category,Title,Content"]
+    for log_item in all_user_logs_for_export:
+      safe_title = log_item.get('title', '').replace('"', '""')
+      safe_content = log_item.get('content', '').replace('"', '""').replace('\n', ' ')
+      csv_rows.append(f"\"{log_item.get('date')}\",\"{log_item.get('category')}\",\"{safe_title}\",\"{safe_content}\"")
+    
+    csv_data = "\n".join(csv_rows)
+    csv_bytes = ('\ufeff' + csv_data).encode('utf-8')
+    
+    st.download_button(
+        label="📥 ดาวน์โหลดประวัติผลงานทั้งหมดเป็น CSV",
+        data=csv_bytes,
+        file_name=f"work_log_report_{clean_user}.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+
   st.subheader("📚 ประวัติผลงานทั้งหมดของคุณ")
 
   ITEMS_PER_PAGE = 5
@@ -322,7 +343,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
           col_act1, col_act2 = st.columns(2)
           with col_act1:
             if st.button("✏️ แก้ไขบันทึกนี้", key=f"btn_edit_{log['_id']}", use_container_width=True):
-              # [ข้อ 4] ตรวจสอบสิทธิ์ความเป็นเจ้าของก่อนเปิดโหมดแก้ไข
               if log.get("author") == clean_user:
                 st.session_state[edit_key] = True
                 st.rerun()
@@ -330,7 +350,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
                 st.error("❌ คุณไม่มีสิทธิ์แก้ไขโพสต์ของผู้อื่น!")
           with col_act2:
             if st.button("🗑️ ลบบันทึกนี้", key=f"del_{log['_id']}", type="secondary", use_container_width=True):
-              # [ข้อ 4] ล็อกเงื่อนไข author ในคำสั่ง delete ของ MongoDB เพื่อความปลอดภัยขั้นสูงสุด
               delete_result = collection.delete_one({"_id": log["_id"], "author": clean_user})
               if delete_result.deleted_count > 0:
                 st.success("ลบข้อมูลสำเร็จแล้ว!")
@@ -365,7 +384,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
 
             if update_btn:
               if new_title and new_content:
-                # [ข้อ 4] ล็อกเงื่อนไข author ตอนอัปเดตข้อมูลด้วย
                 update_result = collection.update_one(
                     {"_id": log["_id"], "author": clean_user},
                     {
