@@ -24,6 +24,10 @@ st.write(
 # --- ส่วนที่ A: ฟอร์มกรอกข้อมูลบันทึกงาน ---
 with st.form("worklog_form"):
   st.subheader("📝 เพิ่มบันทึกงานใหม่")
+  
+  # เพิ่มช่องกรอกชื่อผู้บันทึก
+  author = st.text_input("👤 ชื่อผู้บันทึกงาน (ระบุชื่อของคุณ เพื่อแยกข้อมูล)")
+  
   log_date = st.date_input("วันที่ปฏิบัติงาน", datetime.today())
   title = st.text_input("หัวข้อเรื่อง / งานที่ทำ")
   category = st.selectbox(
@@ -39,7 +43,7 @@ with st.form("worklog_form"):
   submitted = st.form_submit_button("บันทึกข้อมูล")
 
   if submitted:
-    if title and content:
+    if author and title and content:
       # ป้องกันการบันทึกซ้ำด้วยการเช็กสถานะการกดใน session_state
       if "form_submitted" not in st.session_state:
         st.session_state.form_submitted = False
@@ -54,7 +58,9 @@ with st.form("worklog_form"):
           with open(file_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
+        # เพิ่ม field author เข้าไปในข้อมูลที่จะบันทึก
         log_data = {
+            "author": author.strip(),
             "date": str(log_date),
             "title": title,
             "category": category,
@@ -70,41 +76,43 @@ with st.form("worklog_form"):
         st.session_state.form_submitted = False
         st.rerun()
     else:
-      st.warning("กรุณากรอกหัวข้อและรายละเอียดให้ครบถ้วนครับ")
+      st.warning("กรุณากรอก **ชื่อผู้บันทึก**, หัวข้อ และรายละเอียดให้ครบถ้วนครับ")
 
 st.divider()
 
-# --- ส่วนที่ B: แสดงรายการบันทึกการทำงานทั้งหมดจาก MongoDB ---
-st.subheader("📚 ประวัติบันทึกการทำงานทั้งหมด")
+# --- ส่วนที่ B: แสดงรายการบันทึกการทำงานทั้งหมด (พร้อมระบบกรองตามชื่อ) ---
+st.subheader("📚 ประวัติบันทึกการทำงาน")
 
-# ดึงข้อมูลจาก MongoDB เรียงจากล่าสุดไปเก่าสุด (มีชุดเดียวถูกต้องแล้ว)
-logs = list(collection.find().sort("created_at", -1))
+# ช่องค้นหา/กรองข้อมูลตามชื่อ
+search_author = st.text_input("🔍 พิมพ์ชื่อของคุณเพื่อดูประวัติงานเฉพาะบุคคล:")
 
-if len(logs) == 0:
-  st.info("ยังไม่มีข้อมูลบันทึกการทำงาน เริ่มเพิ่มข้อมูลกันเลย!")
-else:
-  for log in logs:
-    with st.expander(f"📌 [{log['category']}] {log['title']} ({log['date']})"):
-      st.write(f"**รายละเอียด:** {log['content']}")
-      if log.get("attachment"):
-        st.write(f"📎 **ไฟล์แนบ:** {log['attachment']}")
-        # หากต้องการแสดงรูปภาพที่อัปโหลด (ถ้าเป็นไฟล์รูป)
-        file_path = os.path.join(UPLOAD_DIR, log["attachment"])
-        if os.path.exists(file_path) and log["attachment"].lower().endswith(
-            ("png", "jpg", "jpeg")
-        ):
-          st.image(file_path, width=400)
-
-      # --- ปุ่มสำหรับลบข้อมูล ---
-      if st.button("🗑️ ลบบันทึกนี้", key=str(log["_id"])):
-        # ลบข้อมูลออกจาก MongoDB โดยอิงตาม _id
-        collection.delete_one({"_id": log["_id"]})
-        
-        # หากมีไฟล์แนบ ให้ลบไฟล์ออกจากโฟลเดอร์ด้วย (ถ้ามี)
+if search_author:
+  # ดึงข้อมูลเฉพาะของชื่อที่ระบุ เรียงจากล่าสุดไปเก่าสุด
+  logs = list(collection.find({"author": {"$regex": search_author.strip(), "$options": "i"}}).sort("created_at", -1))
+  
+  if len(logs) == 0:
+    st.info(f"ยังไม่พบข้อมูลบันทึกของชื่อ '{search_author}' ครับ")
+  else:
+    st.write(f"ผลการค้นหาของ: **{search_author}** (พบ {len(logs)} รายการ)")
+    for log in logs:
+      with st.expander(f"📌 [{log['category']}] {log['title']} ({log['date']}) — โดย: {log.get('author', 'ไม่ระบุชื่อ')}"):
+        st.write(f"**รายละเอียด:** {log['content']}")
         if log.get("attachment"):
-          target_file = os.path.join(UPLOAD_DIR, log["attachment"])
-          if os.path.exists(target_file):
-            os.remove(target_file)
-                
-        st.success("ลบข้อมูลสำเร็จแล้ว!")
-        st.rerun()  # สั่งรีเฟรชหน้าเว็บเพื่อให้รายการที่ถูกลบหายไปทันที
+          st.write(f"📎 **ไฟล์แนบ:** {log['attachment']}")
+          file_path = os.path.join(UPLOAD_DIR, log["attachment"])
+          if os.path.exists(file_path) and log["attachment"].lower().endswith(
+              ("png", "jpg", "jpeg")
+          ):
+            st.image(file_path, width=400)
+
+        # --- ปุ่มสำหรับลบข้อมูล ---
+        if st.button("🗑️ ลบบันทึกนี้", key=str(log["_id"])):
+          collection.delete_one({"_id": log["_id"]})
+          if log.get("attachment"):
+            target_file = os.path.join(UPLOAD_DIR, log["attachment"])
+            if os.path.exists(target_file):
+              os.remove(target_file)
+          st.success("ลบข้อมูลสำเร็จแล้ว!")
+          st.rerun()
+else:
+  st.info("💡 โปรดพิมพ์ชื่อของคุณในช่องค้นหาด้านบน เพื่อเรียกดูประวัติบันทึกงานส่วนตัวครับ")
