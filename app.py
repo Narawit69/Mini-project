@@ -20,7 +20,7 @@ if not os.path.exists(UPLOAD_DIR):
 # ตั้งค่าหน้าเว็บแบบ Wide Mode
 st.set_page_config(page_title="My Daily Work Log", page_icon="💻", layout="wide")
 
-# เพิ่ม Custom CSS เพื่อปรับแต่งปุ่มและฟอนต์ให้อ่านง่าย สบายตา ไม่ต้องเพ่ง
+# เพิ่ม Custom CSS
 st.markdown("""
     <style>
     .main-title {
@@ -47,19 +47,20 @@ st.markdown("""
 def hash_password(password):
   return hashlib.sha256(password.encode()).hexdigest()
 
-# จัดการ Session State ของระบบล็อกอิน
+# จัดการ Session State ของระบบล็อกอิน และตัวรีเซ็ตช่องอัปโหลดไฟล์
 if "logged_in_user" not in st.session_state:
   st.session_state.logged_in_user = None
+if "uploader_key" not in st.session_state:
+  st.session_state.uploader_key = 0
 
 # =====================================================================
-# ส่วนที่ 1: หน้าล็อกอิน / สมัครสมาชิกแบบเต็มตา (ถ้ายังไม่ได้ Login)
+# ส่วนที่ 1: หน้าล็อกอิน / สมัครสมาชิก
 # =====================================================================
 if not st.session_state.logged_in_user:
   st.markdown("<div class='main-title' style='text-align: center;'>💻 My Daily Work Log & Social Space</div>", unsafe_allow_html=True)
   st.markdown("<div class='sub-title' style='text-align: center;'>ระบบบันทึกรายงานการทำงานประจำวัน และพื้นที่แชร์ผลงานร่วมกันอย่างปลอดภัย</div>", unsafe_allow_html=True)
   st.markdown("<br>", unsafe_allow_html=True)
 
-  # จัดกึ่งกลางหน้าจอ
   col1, col2, col3 = st.columns([1, 1.2, 1])
   
   with col2:
@@ -114,17 +115,16 @@ if not st.session_state.logged_in_user:
           
     st.markdown("</div>", unsafe_allow_html=True)
 
-  st.stop() # หยุดการทำงานหน้าหลักไว้ก่อน จนกว่าจะ Login สำเร็จ
+  st.stop() 
 
 # =====================================================================
-# ส่วนที่ 2: หน้าหลักหลัง Login แล้ว (UI สะอาดตา เมนูใช้งานง่าย)
+# ส่วนที่ 2: หน้าหลักหลัง Login 
+# =====================================================================
 clean_user = st.session_state.logged_in_user
 
-# Sidebar สำหรับตั้งค่าและจัดการระบบทั่วไป (ตัวหนังสือใหญ่ขึ้น อ่านสบายตา)
 st.sidebar.markdown(f"### 👋 สวัสดีคุณ, **{clean_user}**")
 st.sidebar.markdown("---")
 
-# เมนูเปลี่ยนโหมดแบบปุ่มวิชวลชัดเจน
 nav_mode = st.sidebar.radio(
     "📌 เมนูหลัก", 
     ["📁 งานของฉัน & จัดการพอร์ต", "🌐 หน้าเยี่ยมชมโปรไฟล์เพื่อนๆ"]
@@ -168,7 +168,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
   st.markdown(f"<div class='main-title'>📁 พอร์ตโฟลิโอและบันทึกงานของคุณ</div>", unsafe_allow_html=True)
   st.markdown("<br>", unsafe_allow_html=True)
   
-  # แสดงส่วนหัวโปรไฟล์
   col_p1, col_p2 = st.columns([1, 6])
   with col_p1:
     avatar_img = user_profile.get("avatar", "")
@@ -182,7 +181,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
 
   st.divider()
 
-  # ฟอร์มเพิ่มงานใหม่
   with st.form("worklog_form"):
     st.subheader("📝 เพิ่มบันทึกงานใหม่")
     
@@ -197,9 +195,12 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
     title = st.text_input("หัวข้อเรื่อง / งานที่ทำ")
     content = st.text_area("รายละเอียดการทำงาน")
 
-    uploaded_file = st.file_uploader(
-        "แนบไฟล์หลักฐาน (รูปภาพ / เอกสาร / วิดีโอ)", 
-        type=["png", "jpg", "jpeg", "pdf", "mp4", "mov", "avi"]
+    # อัปเกรด: รับหลายไฟล์ได้ และใช้ dynamic key เพื่อล้างข้อมูลตอนบันทึกเสร็จ
+    uploaded_files = st.file_uploader(
+        "แนบไฟล์หลักฐาน (เลือกได้หลายไฟล์: รูปภาพ / เอกสาร / วิดีโอ)", 
+        type=["png", "jpg", "jpeg", "pdf", "mp4", "mov", "avi"],
+        accept_multiple_files=True,
+        key=f"uploader_{st.session_state.uploader_key}"
     )
 
     submitted = st.form_submit_button("💾 บันทึกข้อมูลงานนี้", use_container_width=True)
@@ -212,12 +213,15 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
         if not st.session_state.form_submitted:
           st.session_state.form_submitted = True
 
-          filename = ""
-          if uploaded_file is not None:
-            filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uploaded_file.name}"
-            file_path = os.path.join(UPLOAD_DIR, filename)
-            with open(file_path, "wb") as f:
-              f.write(uploaded_file.getbuffer())
+          # จัดการบันทึกไฟล์หลายไฟล์เป็น List
+          saved_filenames = []
+          if uploaded_files:
+            for uploaded_file in uploaded_files:
+              filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uploaded_file.name}"
+              file_path = os.path.join(UPLOAD_DIR, filename)
+              with open(file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+              saved_filenames.append(filename)
 
           log_data = {
               "author": clean_user,
@@ -225,13 +229,15 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
               "title": title,
               "category": category,
               "content": content,
-              "attachment": filename,
+              "attachments": saved_filenames, # เก็บเป็น List รองรับหลายไฟล์
               "comments": [],
               "created_at": datetime.now(),
           }
           collection.insert_one(log_data)
+          
           st.success("บันทึกข้อมูลสำเร็จเรียบร้อยแล้ว! 🎉")
           st.session_state.form_submitted = False
+          st.session_state.uploader_key += 1 # อัปเดต Key เพื่อเคลียร์ช่องอัปโหลดให้ว่าง
           st.rerun()
       else:
         st.warning("กรุณากรอกหัวข้อและรายละเอียดให้ครบถ้วนครับ")
@@ -247,14 +253,22 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
       with st.expander(f"📌 [{log['category']}] {log['title']} ({log['date']})"):
         st.write(f"**รายละเอียด:** {log['content']}")
         
-        if log.get("attachment"):
-          st.write(f"📎 **ไฟล์แนบ:** {log['attachment']}")
-          file_path = os.path.join(UPLOAD_DIR, log["attachment"])
-          if os.path.exists(file_path):
-            if log["attachment"].lower().endswith(("png", "jpg", "jpeg")):
-              st.image(file_path, width=400)
-            elif log["attachment"].lower().endswith(("mp4", "mov", "avi")):
-              st.video(file_path)
+        # จัดการแสดงผลรองรับทั้งระบบไฟล์เดียวแบบเก่า (attachment) และระบบหลายไฟล์แบบใหม่ (attachments)
+        attachments_to_show = log.get("attachments", [])
+        if not attachments_to_show and log.get("attachment"):
+            attachments_to_show = [log.get("attachment")]
+        
+        if attachments_to_show:
+          st.write("📎 **ไฟล์แนบ:**")
+          for att in attachments_to_show:
+            file_path = os.path.join(UPLOAD_DIR, att)
+            if os.path.exists(file_path):
+              if att.lower().endswith(("png", "jpg", "jpeg")):
+                st.image(file_path, width=400)
+              elif att.lower().endswith(("mp4", "mov", "avi")):
+                st.video(file_path)
+              else:
+                st.write(f"📄 ไฟล์เอกสาร: {att}")
 
         comments = log.get("comments", [])
         if comments:
@@ -264,10 +278,11 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             st.markdown(f"- **{c['user']}:** {c['text']} <span style='color:gray; font-size:small;'>({c['time']})</span>", unsafe_allow_html=True)
 
         st.markdown("---")
-        if st.button("🗑️ ลบบันทึกนี้", key=str(log["_id"]), type="secondary"):
+        if st.button("🗑️ ลบบันทึกนี้", key=f"del_{log['_id']}", type="secondary"):
           collection.delete_one({"_id": log["_id"]})
-          if log.get("attachment"):
-            target_file = os.path.join(UPLOAD_DIR, log["attachment"])
+          # ลบไฟล์ทั้งหมดที่เชื่อมโยงกับโพสต์นี้ออกจากเครื่อง
+          for att in attachments_to_show:
+            target_file = os.path.join(UPLOAD_DIR, att)
             if os.path.exists(target_file):
               os.remove(target_file)
           st.success("ลบข้อมูลสำเร็จแล้ว!")
@@ -315,14 +330,21 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
           with st.expander(f"📌 [{log['category']}] {log['title']} ({log['date']})"):
             st.write(f"**รายละเอียด:** {log['content']}")
             
-            if log.get("attachment"):
-              st.write(f"📎 **ไฟล์แนบ:** {log['attachment']}")
-              file_path = os.path.join(UPLOAD_DIR, log["attachment"])
-              if os.path.exists(file_path):
-                if log["attachment"].lower().endswith(("png", "jpg", "jpeg")):
-                  st.image(file_path, width=400)
-                elif log["attachment"].lower().endswith(("mp4", "mov", "avi")):
-                  st.video(file_path)
+            attachments_to_show = log.get("attachments", [])
+            if not attachments_to_show and log.get("attachment"):
+                attachments_to_show = [log.get("attachment")]
+            
+            if attachments_to_show:
+              st.write("📎 **ไฟล์แนบ:**")
+              for att in attachments_to_show:
+                file_path = os.path.join(UPLOAD_DIR, att)
+                if os.path.exists(file_path):
+                  if att.lower().endswith(("png", "jpg", "jpeg")):
+                    st.image(file_path, width=400)
+                  elif att.lower().endswith(("mp4", "mov", "avi")):
+                    st.video(file_path)
+                  else:
+                    st.write(f"📄 ไฟล์เอกสาร: {att}")
 
             comments = log.get("comments", [])
             st.markdown("---")
