@@ -80,6 +80,11 @@ def generate_pdf_report(username, logs_data):
   buffer.seek(0)
   return buffer.getvalue()
 
+# ฟังก์ชันดึงโปรไฟล์แบบใช้ Cache เพื่อลดเวลาโหลดและอาการกระพริบ
+@st.cache_data(ttl=300)
+def get_cached_profile(username):
+  return profile_collection.find_one({"author": username}) or {"author": username, "bio": "...", "avatar": ""}
+
 # ตั้งค่าหน้าเว็บแบบ Wide Mode
 st.set_page_config(page_title="My Daily Work Log", page_icon="💻", layout="wide")
 
@@ -140,7 +145,8 @@ if not st.session_state.logged_in_user:
       
       if st.button("🚀 เข้าสู่ระบบทันที", use_container_width=True):
         if login_user and login_pass:
-          user_record = user_auth_collection.find_one({"username": login_user})
+          with st.spinner("กำลังตรวจสอบข้อมูลเข้าสู่ระบบ..."):
+            user_record = user_auth_collection.find_one({"username": login_user})
           if user_record and user_record["password"] == hash_password(login_pass):
             st.session_state.logged_in_user = login_user
             st.success("เข้าสู่ระบบสำเร็จ!")
@@ -158,21 +164,22 @@ if not st.session_state.logged_in_user:
 
       if st.button("✨ ยืนยันการสมัครสมาชิก", use_container_width=True):
         if reg_user and reg_pass:
-          existing_user = user_auth_collection.find_one({"username": reg_user})
-          if existing_user:
-            st.error("❌ ชื่อผู้ใช้นี้ถูกใช้งานแล้ว กรุณาใช้ชื่ออื่น")
-          else:
-            user_auth_collection.insert_one({
-                "username": reg_user,
-                "password": hash_password(reg_pass),
-                "created_at": datetime.now()
-            })
-            profile_collection.insert_one({
-                "author": reg_user,
-                "bio": "ยังไม่ได้เขียนอธิบายตัวเอง...",
-                "avatar": ""
-            })
-            st.success("🎉 สมัครสมาชิกสำเร็จ! กรุณากลับไปที่แท็บ 'เข้าสู่ระบบ'")
+          with st.spinner("กำลังสร้างบัญชีผู้ใช้งาน..."):
+            existing_user = user_auth_collection.find_one({"username": reg_user})
+            if existing_user:
+              st.error("❌ ชื่อผู้ใช้นี้ถูกใช้งานแล้ว กรุณาใช้ชื่ออื่น")
+            else:
+              user_auth_collection.insert_one({
+                  "username": reg_user,
+                  "password": hash_password(reg_pass),
+                  "created_at": datetime.now()
+              })
+              profile_collection.insert_one({
+                  "author": reg_user,
+                  "bio": "ยังไม่ได้เขียนอธิบายตัวเอง...",
+                  "avatar": ""
+              })
+              st.success("🎉 สมัครสมาชิกสำเร็จ! กรุณากลับไปที่แท็บ 'เข้าสู่ระบบ'")
         else:
           st.warning("⚠️ กรุณากรอกชื่อและรหัสผ่านให้ครบถ้วน")
           
@@ -212,7 +219,7 @@ nav_mode = st.session_state.nav_mode
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("#### 🎨 ตั้งค่าโปรไฟล์ส่วนตัว")
-user_profile = profile_collection.find_one({"author": clean_user}) or {"author": clean_user, "bio": "...", "avatar": ""}
+user_profile = get_cached_profile(clean_user)
 
 with st.sidebar.form("profile_form"):
   new_bio = st.text_area("คำอธิบายสั้นๆ (Bio):", value=user_profile.get("bio", ""))
@@ -220,16 +227,18 @@ with st.sidebar.form("profile_form"):
   save_profile = st.form_submit_button("💾 บันทึกโปรไฟล์", use_container_width=True)
 
   if save_profile:
-    avatar_filename = user_profile.get("avatar", "")
-    if avatar_file is not None:
-      upload_avatar = cloudinary.uploader.upload(avatar_file, resource_type="image", folder="worklog_avatars")
-      avatar_filename = upload_avatar.get("secure_url")
-    
-    profile_collection.update_one(
-        {"author": clean_user},
-        {"$set": {"bio": new_bio, "avatar": avatar_filename}},
-        upsert=True
-    )
+    with st.spinner("กำลังอัปเดตข้อมูลโปรไฟล์..."):
+      avatar_filename = user_profile.get("avatar", "")
+      if avatar_file is not None:
+        upload_avatar = cloudinary.uploader.upload(avatar_file, resource_type="image", folder="worklog_avatars")
+        avatar_filename = upload_avatar.get("secure_url")
+      
+      profile_collection.update_one(
+          {"author": clean_user},
+          {"$set": {"bio": new_bio, "avatar": avatar_filename}},
+          upsert=True
+      )
+      st.cache_data.clear() # ล้างแคชเพื่อให้รูปโปรไฟล์อัปเดตทันที
     st.success("บันทึกโปรไฟล์สำเร็จ!")
     st.rerun()
 
@@ -318,28 +327,29 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
         if not st.session_state.form_submitted:
           st.session_state.form_submitted = True
 
-          saved_file_urls = []
-          if uploaded_files:
-            for uploaded_file in uploaded_files:
-              upload_result = cloudinary.uploader.upload(
-                  uploaded_file,
-                  resource_type="auto",
-                  folder="worklog_uploads"
-              )
-              saved_file_urls.append(upload_result.get("secure_url"))
+          with st.spinner("กำลังอัปโหลดไฟล์แนบและบันทึกข้อมูล กรุณารอสักครู่..."):
+            saved_file_urls = []
+            if uploaded_files:
+              for uploaded_file in uploaded_files:
+                upload_result = cloudinary.uploader.upload(
+                    uploaded_file,
+                    resource_type="auto",
+                    folder="worklog_uploads"
+                )
+                saved_file_urls.append(upload_result.get("secure_url"))
 
-          log_data = {
-              "author": clean_user,
-              "date": str(log_date),
-              "title": title,
-              "category": category,
-              "content": content,
-              "attachments": saved_file_urls,
-              "comments": [],
-              "likes": [],
-              "created_at": datetime.now(),
-          }
-          collection.insert_one(log_data)
+            log_data = {
+                "author": clean_user,
+                "date": str(log_date),
+                "title": title,
+                "category": category,
+                "content": content,
+                "attachments": saved_file_urls,
+                "comments": [],
+                "likes": [],
+                "created_at": datetime.now(),
+            }
+            collection.insert_one(log_data)
           
           st.success("บันทึกข้อมูลสำเร็จเรียบร้อยแล้ว! 🎉")
           st.session_state.form_submitted = False
@@ -506,7 +516,8 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
                 st.error("❌ คุณไม่มีสิทธิ์แก้ไขโพสต์ของผู้อื่น!")
           with col_act2:
             if st.button("🗑️ ลบบันทึกนี้", key=f"del_{log['_id']}", type="secondary", use_container_width=True):
-              delete_result = collection.delete_one({"_id": log["_id"], "author": clean_user})
+              with st.spinner("กำลังลบข้อมูล..."):
+                delete_result = collection.delete_one({"_id": log["_id"], "author": clean_user})
               if delete_result.deleted_count > 0:
                 st.success("ลบข้อมูลสำเร็จแล้ว!")
                 st.rerun()
@@ -532,7 +543,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             new_title = st.text_input("หัวข้อเรื่อง / งานที่ทำ", value=log['title'])
             new_content = st.text_area("รายละเอียดการทำงาน", value=log['content'])
 
-            # --- จัดการไฟล์แนบเดิมในโหมดแก้ไข ---
             existing_attachments = log.get("attachments", [])
             if not existing_attachments and log.get("attachment"):
               existing_attachments = [log.get("attachment")]
@@ -545,7 +555,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
                 if is_kept:
                   kept_attachments.append(att_url)
 
-            # --- เพิ่มช่องอัปโหลดไฟล์ใหม่เพิ่มเติมในโหมดแก้ไข ---
             new_uploaded_files = st.file_uploader(
                 "➕ แนบไฟล์เพิ่มเติม (รูปภาพ / เอกสาร / วิดีโอ)", 
                 type=["png", "jpg", "jpeg", "pdf", "mp4", "mov", "avi"],
@@ -561,7 +570,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
 
             if update_btn:
               if new_title and new_content:
-                # อัปโหลดไฟล์ใหม่ที่เพิ่มเข้ามาขึ้น Cloudinary
                 final_attachments = kept_attachments.copy()
                 if new_uploaded_files:
                   for new_file in new_uploaded_files:
@@ -628,7 +636,7 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
           })
 
       st.divider()
-      friend_profile = profile_collection.find_one({"author": selected_friend}) | {}
+      friend_profile = get_cached_profile(selected_friend)
       
       f_col1, f_col2 = st.columns([1, 6])
       with f_col1:
