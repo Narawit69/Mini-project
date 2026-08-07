@@ -595,31 +595,49 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             new_title = st.text_input("หัวข้อเรื่อง / งานที่ทำ", value=log['title'])
             new_content = st.text_area("รายละเอียดการทำงาน", value=log['content'])
             
-            # 🗑️ ส่วนเลือกติ๊กเพื่อลบไฟล์แนบเก่า
+            # 🗑️ ส่วนเลือกติ๊กพร้อมภาพตัวอย่างขนาดเล็ก (Thumbnail) เพื่อลบไฟล์แนบเก่า
             existing_attachments = log.get("attachments", [])
             selected_to_remove = []
             if existing_attachments:
               st.markdown("🗑️ **เลือกไฟล์แนบที่ต้องการลบออก:**")
               for att_idx, att_url in enumerate(existing_attachments):
-                # ตัดชื่อไฟล์สั้นๆ มาแสดงผลเพื่อความสวยงาม
-                file_name_display = att_url.split("/")[-1][:30]
-                is_checked = st.checkbox(f"ลบไฟล์: {file_name_display}...", key=f"del_file_{log['_id']}_{att_idx}")
-                if is_checked:
-                  selected_to_remove.append(att_url)
+                lower_att = att_url.lower()
+                is_image = any(ext in lower_att for ext in [".png", ".jpg", ".jpeg", ".webp"])
+                
+                if is_image:
+                  # จัดเรียงให้อยู่ในคอลัมน์: รูปตัวอย่างเล็กๆ อยู่ฝั่งซ้าย, Checkbox อยู่ฝั่งขวา
+                  t_col1, t_col2 = st.columns([1, 4])
+                  with t_col1:
+                    st.image(optimize_cloudinary_url(att_url, width=100), width=60)
+                  with t_col2:
+                    is_checked = st.checkbox(f"ลบรูปภาพนี้", key=f"del_file_{log['_id']}_{att_idx}")
+                    if is_checked:
+                      selected_to_remove.append(att_url)
+                else:
+                  file_name_display = att_url.split("/")[-1][:35]
+                  is_checked = st.checkbox(f"ลบไฟล์เอกสาร: {file_name_display}...", key=f"del_file_{log['_id']}_{att_idx}")
+                  if is_checked:
+                    selected_to_remove.append(att_url)
 
-            # 📎 ส่วนอัปโหลดไฟล์แนบเพิ่มเติม
+            # 📎 ส่วนอัปโหลดไฟล์แนบเพิ่มเติม พร้อมแสดงพรีวิวภาพขนาดเล็กแบบเรียลไทม์
             new_uploaded_files = st.file_uploader(
                 "แนบไฟล์หลักฐานเพิ่มเติม (เลือกได้หลายไฟล์: รูปภาพ / เอกสาร / วิดีโอ)", 
                 type=["png", "jpg", "jpeg", "pdf", "mp4", "mov", "avi"],
                 accept_multiple_files=True,
                 key=f"edit_uploader_{log['_id']}"
             )
+
+            if new_uploaded_files:
+              st.caption("🖼️ ตัวอย่างไฟล์ภาพที่จะเพิ่มเข้ามาใหม่:")
+              preview_cols = st.columns(min(len(new_uploaded_files), 4))
+              for p_idx, p_file in enumerate(new_uploaded_files):
+                if p_file.type.startswith("image/"):
+                  with preview_cols[p_idx % len(preview_cols)]:
+                    st.image(p_file, width=80)
             
             if st.form_submit_button("💾 บันทึกการแก้ไข", use_container_width=True):
-              # กรองไฟล์เก่าออกโดยเอาเฉพาะไฟล์ที่ไม่ได้ถูกติ๊กเลือกให้ลบ
               updated_attachments = [url for url in existing_attachments if url not in selected_to_remove]
               
-              # ถ้ามีการอัปโหลดไฟล์ใหม่เพิ่มเข้ามา ให้ส่งขึ้น Cloudinary แล้วรวมเข้าไป
               if new_uploaded_files:
                 for uf in new_uploaded_files:
                   upload_res = cloudinary.uploader.upload(uf, resource_type="auto", folder="worklog_uploads")
