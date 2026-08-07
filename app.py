@@ -719,11 +719,10 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
           st.info("🖼️ ไม่มีรูปโปรไฟล์")
       with f_col2:
         safe_friend_name = html.escape(selected_friend)
-        # แก้ไขจาก st.subheader มาเป็น st.markdown เพื่อรองรับ HTML อย่างปลอดภัย
         st.markdown(f"### 👤 โปรไฟล์ของ: {safe_friend_name}")
         st.write(f"**Bio:** {friend_profile.get('bio', 'ยังไม่ได้เขียนอธิบายตัวเอง')}")
 
-      # 💬 ส่วนกระดานคอมเมนต์หน้าโปรไฟล์ (Profile Guestbook)
+      # 💬 ส่วนกระดานคอมเมนต์หน้าโปรไฟล์ พร้อมระบบแก้ไข, ลบ และตอบกลับ (Reply)
       st.markdown("---")
       st.markdown(f"💬 **กระดานข้อความฝากถึง {selected_friend}:**")
       
@@ -737,7 +736,8 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
                 "sender": clean_user,
                 "text": guest_msg.strip(),
                 "created_at": datetime.now() + timedelta(hours=7),
-                "is_read": False
+                "is_read": False,
+                "replies": []
             })
             st.success("ส่งข้อความฝากไว้ที่โปรไฟล์เรียบร้อยแล้ว!")
             st.rerun()
@@ -746,13 +746,78 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
 
       profile_cmts_list = list(profile_comments_collection.find({"profile_owner": selected_friend}).sort("created_at", -1))
       if profile_cmts_list:
-        for p_cmt in profile_cmts_list:
+        for p_idx, p_cmt in enumerate(profile_cmts_list):
           with st.container(border=True):
             p_sender = html.escape(p_cmt.get('sender', ''))
-            p_text = html.escape(p_cmt.get('text', ''))
+            p_text = p_cmt.get('text', '')
             p_time = p_cmt.get('created_at').strftime("%Y-%m-%d %H:%M") if p_cmt.get('created_at') else "-"
+            
             st.markdown(f"👤 **{p_sender}** <span style='color:gray; font-size:small;'>({p_time})</span>", unsafe_allow_html=True)
-            st.write(p_text)
+            
+            # ตรวจสอบสถานะการแก้ไขคอมเมนต์โปรไฟล์นี้
+            edit_p_key = f"edit_p_cmt_{p_cmt['_id']}"
+            if edit_p_key not in st.session_state:
+              st.session_state[edit_p_key] = False
+
+            if not st.session_state[edit_p_key]:
+              st.write(p_text)
+
+              # แสดงรายการตอบกลับย่อย (Replies)
+              p_replies = p_cmt.get("replies", [])
+              if p_replies:
+                for r_item in p_replies:
+                  r_user = html.escape(r_item.get('user', ''))
+                  r_time = html.escape(r_item.get('time', ''))
+                  st.markdown(f"""
+                      <div class='reply-box'>
+                          ↳ 👤 <b>{r_user}</b> <span style='color:gray; font-size:small;'>({r_time})</span><br>
+                          {r_item.get('text', '')}
+                      </div>
+                  """, unsafe_allow_html=True)
+
+              # ฟอร์มตอบกลับคอมเมนต์โปรไฟล์ (ใครก็ตอบได้ หรือเน้นเจ้าของโปรไฟล์)
+              with st.form(key=f"p_reply_form_{p_cmt['_id']}"):
+                p_rep_text = st.text_input("💬 ตอบกลับข้อความนี้:", key=f"p_rep_input_{p_cmt['_id']}")
+                if st.form_submit_button("ส่งคำตอบกลับ", use_container_width=True):
+                  if p_rep_text.strip():
+                    new_p_reply = {
+                        "user": clean_user,
+                        "text": p_rep_text.strip(),
+                        "time": (datetime.now() + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M")
+                    }
+                    profile_comments_collection.update_one(
+                        {"_id": p_cmt["_id"]},
+                        {"$push": {"replies": new_p_reply}}
+                    )
+                    st.success("ตอบกลับเรียบร้อยแล้ว!")
+                    st.rerun()
+                  else:
+                    st.warning("กรุณาพิมพ์ข้อความก่อนส่ง")
+
+              # ปุ่มแก้ไข/ลบ สำหรับเจ้าของคอมเมนต์ หรือ เจ้าของโปรไฟล์
+              if clean_user == p_cmt.get('sender') or clean_user == selected_friend:
+                act_c1, act_c2 = st.columns(2)
+                with act_c1:
+                  if st.button("✏️ แก้ไขข้อความ", key=f"btn_edit_p_{p_cmt['_id']}", use_container_width=True):
+                    st.session_state[edit_p_key] = True
+                    st.rerun()
+                with act_c2:
+                  if st.button("🗑️ ลบข้อความ", key=f"btn_del_p_{p_cmt['_id']}", type="secondary", use_container_width=True):
+                    profile_comments_collection.delete_one({"_id": p_cmt["_id"]})
+                    st.success("ลบข้อความสำเร็จ!")
+                    st.rerun()
+            else:
+              # ฟอร์มแก้ไขข้อความคอมเมนต์
+              with st.form(key=f"form_edit_p_{p_cmt['_id']}"):
+                new_p_text = st.text_area("แก้ไขข้อความ:", value=p_text)
+                if st.form_submit_button("💾 บันทึกการแก้ไข", use_container_width=True):
+                  profile_comments_collection.update_one(
+                      {"_id": p_cmt["_id"]},
+                      {"$set": {"text": new_p_text.strip()}}
+                  )
+                  st.session_state[edit_p_key] = False
+                  st.success("แก้ไขข้อความสำเร็จ!")
+                  st.rerun()
       else:
         st.caption("ยังไม่มีข้อความฝากไว้บนโปรไฟล์นี้ เป็นคนแรกที่ทักทายเลยสิ!")
 
