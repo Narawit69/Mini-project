@@ -595,8 +595,36 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             new_title = st.text_input("หัวข้อเรื่อง / งานที่ทำ", value=log['title'])
             new_content = st.text_area("รายละเอียดการทำงาน", value=log['content'])
             
+            # 📎 เพิ่มช่องอัปโหลดไฟล์แนบเพิ่มเติมในโหมดแก้ไข
+            new_uploaded_files = st.file_uploader(
+                "แนบไฟล์หลักฐานเพิ่มเติม (เลือกได้หลายไฟล์: รูปภาพ / เอกสาร / วิดีโอ)", 
+                type=["png", "jpg", "jpeg", "pdf", "mp4", "mov", "avi"],
+                accept_multiple_files=True,
+                key=f"edit_uploader_{log['_id']}"
+            )
+            
             if st.form_submit_button("💾 บันทึกการแก้ไข", use_container_width=True):
-              collection.update_one({"_id": log["_id"], "author": clean_user}, {"$set": {"date": str(new_date), "category": new_category, "title": new_title, "content": new_content}})
+              # ดึงรายการไฟล์แนบเดิมที่มีอยู่แล้ว
+              existing_attachments = log.get("attachments", [])
+              
+              # ถ้ามีการอัปโหลดไฟล์ใหม่เพิ่มเข้ามา ให้ส่งขึ้น Cloudinary แล้วรวมกับของเดิม
+              if new_uploaded_files:
+                for uf in new_uploaded_files:
+                  upload_res = cloudinary.uploader.upload(uf, resource_type="auto", folder="worklog_uploads")
+                  existing_attachments.append(upload_res.get("secure_url"))
+
+              collection.update_one(
+                  {"_id": log["_id"], "author": clean_user}, 
+                  {
+                      "$set": {
+                          "date": str(new_date), 
+                          "category": new_category, 
+                          "title": new_title, 
+                          "content": new_content,
+                          "attachments": existing_attachments
+                      }
+                  }
+              )
               st.session_state[edit_key] = False
               st.success("แก้ไขสำเร็จ!")
               st.rerun()
