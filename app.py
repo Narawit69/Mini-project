@@ -83,7 +83,7 @@ def generate_pdf_report(username, logs_data):
 # ตั้งค่าหน้าเว็บแบบ Wide Mode
 st.set_page_config(page_title="My Daily Work Log", page_icon="💻", layout="wide")
 
-# เพิ่ม Custom CSS
+# เพิ่ม Custom CSS สำหรับดีไซน์กล่องคอมเมนต์และการ์ดต่างๆ ให้สวยงามเด่นชัด
 st.markdown("""
     <style>
     .main-title {
@@ -104,17 +104,26 @@ st.markdown("""
         border: 1px solid #E2E8F0;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     }
+    .comment-card {
+        background-color: #F1F5F9;
+        padding: 10px 15px;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        border-left: 4px solid #3B82F6;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 def hash_password(password):
   return hashlib.sha256(password.encode()).hexdigest()
 
-# จัดการ Session State ของระบบล็อกอิน และตัวรีเซ็ตช่องอัปโหลดไฟล์
+# จัดการ Session State ของระบบล็อกอิน, ตัวรีเซ็ตช่องอัปโหลด และสถานะหน้าหลัก
 if "logged_in_user" not in st.session_state:
   st.session_state.logged_in_user = None
 if "uploader_key" not in st.session_state:
   st.session_state.uploader_key = 0
+if "nav_mode" not in st.session_state:
+  st.session_state.nav_mode = "📁 งานของฉัน & จัดการพอร์ต"
 
 # =====================================================================
 # ส่วนที่ 1: หน้าล็อกอิน / สมัครสมาชิก
@@ -183,16 +192,33 @@ if not st.session_state.logged_in_user:
 # =====================================================================
 clean_user = st.session_state.logged_in_user
 
+# --- Sidebar เมนูนำทางแบบปุ่มกด ---
 st.sidebar.markdown(f"### 👋 สวัสดีคุณ, **{clean_user}**")
 st.sidebar.markdown("---")
+st.sidebar.markdown("#### 📌 เมนูหลัก")
 
-nav_mode = st.sidebar.radio(
-    "📌 เมนูหลัก", 
-    ["📁 งานของฉัน & จัดการพอร์ต", "🌐 หน้าเยี่ยมชมโปรไฟล์เพื่อนๆ"]
+btn_nav1 = st.sidebar.button(
+    "📁 งานของฉัน & พอร์ต", 
+    use_container_width=True, 
+    type="primary" if st.session_state.nav_mode == "📁 งานของฉัน & จัดการพอร์ต" else "secondary"
 )
+if btn_nav1:
+  st.session_state.nav_mode = "📁 งานของฉัน & จัดการพอร์ต"
+  st.rerun()
+
+btn_nav2 = st.sidebar.button(
+    "🌐 เยี่ยมชมโปรไฟล์เพื่อนๆ", 
+    use_container_width=True, 
+    type="primary" if st.session_state.nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์เพื่อนๆ" else "secondary"
+)
+if btn_nav2:
+  st.session_state.nav_mode = "🌐 หน้าเยี่ยมชมโปรไฟล์เพื่อนๆ"
+  st.rerun()
+
+nav_mode = st.session_state.nav_mode
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🎨 ตั้งค่าโปรไฟล์ส่วนตัว")
+st.sidebar.markdown("#### 🎨 ตั้งค่าโปรไฟล์ส่วนตัว")
 user_profile = profile_collection.find_one({"author": clean_user}) or {"author": clean_user, "bio": "...", "avatar": ""}
 
 with st.sidebar.form("profile_form"):
@@ -220,11 +246,38 @@ if st.sidebar.button("🚪 ออกจากระบบ", use_container_width=
   st.rerun()
 
 
+# --- ส่วนหัวหลัก พร้อมระบบแจ้งเตือนกล่องจดหมายมุมบนขวา ---
+top_col1, top_col2 = st.columns([5, 1])
+
+with top_col2:
+  unread_count = visitor_collection.count_documents({"profile_owner": clean_user, "is_read": False})
+  badge_label = f"🔔 กล่องจดหมาย ({unread_count})" if unread_count > 0 else "🔔 กล่องจดหมาย"
+  
+  with st.popover(badge_label, use_container_width=True):
+    st.markdown("#### 📬 ผู้เข้าชมโปรไฟล์ล่าสุด")
+    recent_visitors = list(visitor_collection.find({"profile_owner": clean_user}).sort("visited_at", -1).limit(10))
+    
+    if recent_visitors:
+      for v_item in recent_visitors:
+        v_name = v_item.get("visitor", "ผู้ใช้ไม่ระบุตัวตน")
+        v_time = v_item.get("visited_at").strftime("%Y-%m-%d %H:%M") if v_item.get("visited_at") else "-"
+        st.markdown(f"- 👤 **{v_name}** <span style='color:gray; font-size:small;'>({v_time})</span>", unsafe_allow_html=True)
+      
+      visitor_collection.update_many(
+          {"profile_owner": clean_user, "is_read": False},
+          {"$set": {"is_read": True}}
+      )
+    else:
+      st.caption("📭 ยังไม่มีใครมาเยี่ยมชมโปรไฟล์ของคุณในขณะนี้")
+
+
 # ==========================================
 # โหมดที่ 1: งานของฉัน & จัดการ (My Work Log)
 # ==========================================
 if nav_mode == "📁 งานของฉัน & จัดการพอร์ต":
-  st.markdown(f"<div class='main-title'>📁 พอร์ตโฟลิโอและบันทึกงานของคุณ</div>", unsafe_allow_html=True)
+  with top_col1:
+    st.markdown(f"<div class='main-title'>📁 พอร์ตโฟลิโอและบันทึกงานของคุณ</div>", unsafe_allow_html=True)
+  
   st.markdown("<br>", unsafe_allow_html=True)
   
   col_p1, col_p2 = st.columns([1, 6])
@@ -238,21 +291,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
   with col_p2:
     st.subheader(f"ผู้ใช้งาน: {clean_user}")
     st.write(f"**Bio:** {user_profile.get('bio', 'ยังไม่มีคำอธิบาย')}")
-
-  # กล่องจดหมายผู้เข้าชมโปรไฟล์
-  st.markdown("---")
-  st.subheader("📬 กล่องจดหมายผู้เข้าชมโปรไฟล์ (Profile Viewers)")
-  
-  recent_visitors = list(visitor_collection.find({"profile_owner": clean_user}).sort("visited_at", -1).limit(10))
-  
-  if recent_visitors:
-    st.info("👀 มีผู้ใช้งานแวะมาเยี่ยมชมโปรไฟล์ของคุณ:")
-    for v_item in recent_visitors:
-      v_name = v_item.get("visitor", "ผู้ใช้ไม่ระบุตัวตน")
-      v_time = v_item.get("visited_at").strftime("%Y-%m-%d %H:%M") if v_item.get("visited_at") else "-"
-      st.markdown(f"- 👤 **{v_name}** เข้ามาเยี่ยมชมโปรไฟล์ของคุณเมื่อวันที่ {v_time}")
-  else:
-    st.caption("📭 ยังไม่มีใครมาเยี่ยมชมโปรไฟล์ของคุณในขณะนี้ ลองแวะไปส่องเพื่อนก่อน เผื่อเพื่อนจะแวะมาส่องกลับ!")
 
   st.divider()
 
@@ -451,12 +489,22 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
               else:
                 st.markdown(f"📄 [คลิกเพื่อเปิดดูไฟล์เอกสาร]({att_url})", unsafe_allow_html=True)
 
+          # แสดงรายชื่อคนกดไลก์ในโพสต์ของตัวเองด้วย
+          likes_list = log.get("likes", [])
+          if likes_list:
+            st.markdown(f"❤️ **ถูกใจโดย:** {', '.join(likes_list)} ({len(likes_list)} คน)")
+
           comments = log.get("comments", [])
           if comments:
             st.markdown("---")
-            st.markdown("💬 **ความคิดเห็นจากผู้เยี่ยมชม:**")
+            st.markdown("💬 **ความคิดเห็น:**")
             for c in comments:
-              st.markdown(f"- **{c['user']}:** {c['text']} <span style='color:gray; font-size:small;'>({c['time']})</span>", unsafe_allow_html=True)
+              st.markdown(f"""
+                  <div class="comment-card">
+                      <b>👤 {c['user']}</b> <span style='color:gray; font-size:small;'>({c['time']})</span><br>
+                      {c['text']}
+                  </div>
+              """, unsafe_allow_html=True)
 
           st.markdown("---")
           col_act1, col_act2 = st.columns(2)
@@ -531,7 +579,9 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
 # โหมดที่ 2: เยี่ยมชมโปรไฟล์เพื่อนๆ (Explore)
 # ==========================================
 elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์เพื่อนๆ":
-  st.markdown("<div class='main-title'>🌐 พื้นที่สำรวจและเยี่ยมชมผลงานเพื่อนๆ</div>", unsafe_allow_html=True)
+  with top_col1:
+    st.markdown("<div class='main-title'>🌐 พื้นที่สำรวจและเยี่ยมชมผลงานเพื่อนๆ</div>", unsafe_allow_html=True)
+  
   st.write("เลือกดูโปรไฟล์และผลงานของเพื่อนร่วมทีม พร้อมส่งข้อความคอมเมนต์และกดไลก์ให้กำลังใจกันได้ที่นี่ครับ!")
   st.markdown("<br>", unsafe_allow_html=True)
 
@@ -551,7 +601,8 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
           visitor_collection.insert_one({
               "profile_owner": selected_friend,
               "visitor": clean_user,
-              "visited_at": datetime.now()
+              "visited_at": datetime.now(),
+              "is_read": False
           })
 
       st.divider()
@@ -658,6 +709,7 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
                 else:
                   st.markdown(f"📄 [คลิกเพื่อเปิดดูไฟล์เอกสาร]({att_url})", unsafe_allow_html=True)
 
+            # ระบบ Like / Reaction พร้อมแสดงรายชื่อคนกดไลก์ชัดเจน
             likes_list = log.get("likes", [])
             total_likes = len(likes_list)
             is_liked_by_me = clean_user in likes_list
@@ -678,12 +730,23 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
                       {"$addToSet": {"likes": clean_user}}
                   )
                 st.rerun()
+            with col_like2:
+              if likes_list:
+                st.caption(f"❤️ ถูกใจโดย: {', '.join(likes_list)}")
+              else:
+                st.caption("🤍 ยังไม่มีคนถูกใจ เป็นคนแรกเลยสิ!")
 
+            # ส่วนคอมเมนต์ที่ดีไซน์ใหม่ให้อ่านง่ายเป็นสัดส่วน
             comments = log.get("comments", [])
             st.markdown("💬 **ความคิดเห็นทั้งหมด:**")
             if comments:
               for c in comments:
-                st.markdown(f"- **{c['user']}:** {c['text']} <span style='color:gray; font-size:small;'>({c['time']})</span>", unsafe_allow_html=True)
+                st.markdown(f"""
+                    <div class="comment-card">
+                        <b>👤 {c['user']}</b> <span style='color:gray; font-size:small;'>({c['time']})</span><br>
+                        {c['text']}
+                    </div>
+                """, unsafe_allow_html=True)
             else:
               st.caption("ยังไม่มีความคิดเห็น เป็นคนแรกที่คอมเมนต์เลยสิ!")
 
