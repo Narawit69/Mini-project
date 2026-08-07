@@ -595,7 +595,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             new_title = st.text_input("หัวข้อเรื่อง / งานที่ทำ", value=log['title'])
             new_content = st.text_area("รายละเอียดการทำงาน", value=log['content'])
             
-            # 🗑️ ส่วนเลือกติ๊กพร้อมภาพตัวอย่างขนาดเล็ก (Thumbnail) เพื่อลบไฟล์แนบเก่า
+            # 🗑️ ส่วนเลือกติ๊กพร้อมภาพตัวอย่าง และปุ่มขยายดูภาพขนาดเต็ม (Expander)
             existing_attachments = log.get("attachments", [])
             selected_to_remove = []
             if existing_attachments:
@@ -605,12 +605,13 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
                 is_image = any(ext in lower_att for ext in [".png", ".jpg", ".jpeg", ".webp"])
                 
                 if is_image:
-                  # จัดเรียงให้อยู่ในคอลัมน์: รูปตัวอย่างเล็กๆ อยู่ฝั่งซ้าย, Checkbox อยู่ฝั่งขวา
-                  t_col1, t_col2 = st.columns([1, 4])
+                  t_col1, t_col2 = st.columns([1.5, 3.5])
                   with t_col1:
-                    st.image(optimize_cloudinary_url(att_url, width=100), width=60)
+                    st.image(optimize_cloudinary_url(att_url, width=120), width=70)
+                    with st.expander("🔍 ดูภาพเต็ม"):
+                      st.image(optimize_cloudinary_url(att_url, width=800), use_container_width=True)
                   with t_col2:
-                    is_checked = st.checkbox(f"ลบรูปภาพนี้", key=f"del_file_{log['_id']}_{att_idx}")
+                    is_checked = st.checkbox("ลบรูปภาพนี้", key=f"del_file_{log['_id']}_{att_idx}")
                     if is_checked:
                       selected_to_remove.append(att_url)
                 else:
@@ -619,7 +620,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
                   if is_checked:
                     selected_to_remove.append(att_url)
 
-            # 📎 ส่วนอัปโหลดไฟล์แนบเพิ่มเติม พร้อมแสดงพรีวิวภาพขนาดเล็กแบบเรียลไทม์
+            # 📎 ส่วนอัปโหลดไฟล์แนบเพิ่มเติม พร้อมแสดงพรีวิวภาพขนาดเล็กและกดดูภาพเต็มได้เช่นกัน
             new_uploaded_files = st.file_uploader(
                 "แนบไฟล์หลักฐานเพิ่มเติม (เลือกได้หลายไฟล์: รูปภาพ / เอกสาร / วิดีโอ)", 
                 type=["png", "jpg", "jpeg", "pdf", "mp4", "mov", "avi"],
@@ -628,12 +629,11 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             )
 
             if new_uploaded_files:
-              st.caption("🖼️ ตัวอย่างไฟล์ภาพที่จะเพิ่มเข้ามาใหม่:")
-              preview_cols = st.columns(min(len(new_uploaded_files), 4))
+              st.caption("🖼️ ตัวอย่างไฟล์ภาพที่จะเพิ่มเข้ามาใหม่ (คลิกขยายดูได้):")
               for p_idx, p_file in enumerate(new_uploaded_files):
                 if p_file.type.startswith("image/"):
-                  with preview_cols[p_idx % len(preview_cols)]:
-                    st.image(p_file, width=80)
+                  with st.expander(f"🔍 พรีวิว: {p_file.name}"):
+                    st.image(p_file, use_container_width=True)
             
             if st.form_submit_button("💾 บันทึกการแก้ไข", use_container_width=True):
               updated_attachments = [url for url in existing_attachments if url not in selected_to_remove]
