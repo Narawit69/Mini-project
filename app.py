@@ -3,6 +3,7 @@ import io
 import os
 import bcrypt
 import hashlib
+import html  # 📌 นำเข้าไลบรารีสำหรับป้องกัน XSS 
 import streamlit as st
 from pymongo import MongoClient
 import cloudinary
@@ -265,7 +266,8 @@ with top_col2:
     
     if recent_visitors:
       for v_item in recent_visitors:
-        v_name = v_item.get("visitor", "ผู้ใช้ไม่ระบุตัวตน")
+        # 🛡️ ป้องกัน XSS จากชื่อผู้เยี่ยมชม
+        v_name = html.escape(v_item.get("visitor", "ผู้ใช้ไม่ระบุตัวตน"))
         v_time = v_item.get("visited_at").strftime("%Y-%m-%d %H:%M") if v_item.get("visited_at") else "-"
         st.markdown(f"- 👤 **{v_name}** <span style='color:gray; font-size:small;'>({v_time})</span>", unsafe_allow_html=True)
       
@@ -466,7 +468,10 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
           if comments:
             for c in comments:
               with st.container(border=True):
-                st.markdown(f"👤 **{c['user']}** <span style='color:gray; font-size:small;'>({c['time']})</span>", unsafe_allow_html=True)
+                # 🛡️ ป้องกัน XSS ในหน้าโปรไฟล์ตัวเอง
+                c_user = html.escape(c['user'])
+                c_time = html.escape(c['time'])
+                st.markdown(f"👤 **{c_user}** <span style='color:gray; font-size:small;'>({c_time})</span>", unsafe_allow_html=True)
                 st.write(c['text'])
           else:
             st.caption("ยังไม่มีความคิดเห็น")
@@ -522,8 +527,12 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
   st.write("เลือกดูโปรไฟล์และผลงานของเพื่อนร่วมทีม พร้อมส่งข้อความคอมเมนต์และกดไลก์ให้กำลังใจกันได้ที่นี่ครับ!")
   st.markdown("<br>", unsafe_allow_html=True)
 
-  # 🔍 ดึงรายชื่อจากตารางผู้ใช้จริง (user_auth_collection) แทนโปรไฟล์ เพื่อป้องกันรายชื่อค้าง
-  all_authors = [u["username"] for u in user_auth_collection.find({}, {"username": 1})]
+  # 🔍 ใช้หลักการเซต (Set) เพื่อหาจุดตัด (Intersection) กรองรายชื่อผีออก
+  auth_users = set(u["username"] for u in user_auth_collection.find({}, {"username": 1}))
+  profile_users = set(p["author"] for p in profile_collection.find({}, {"author": 1}))
+  
+  # ผู้ใช้ต้องมีรายชื่ออยู่ในทั้ง 2 ตารางเท่านั้นถึงจะถูกนำมาแสดง (พร้อมจัดเรียง A-Z ให้สวยงาม)
+  all_authors = sorted(list(auth_users & profile_users))
   other_authors = [a for a in all_authors if a.lower() != clean_user.lower()]
 
   if len(other_authors) == 0:
@@ -572,7 +581,11 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
             comments = log.get("comments", [])
             st.markdown("💬 **ความคิดเห็น:**")
             for c in comments:
-              st.markdown(f"- **{c['user']}**: {c['text']} <span style='color:gray; font-size:small;'>({c['time']})</span>", unsafe_allow_html=True)
+              # 🛡️ ป้องกัน XSS ในหน้าโปรไฟล์คนอื่น
+              c_user = html.escape(c['user'])
+              c_text = html.escape(c['text']) 
+              c_time = html.escape(c['time'])
+              st.markdown(f"- **{c_user}**: {c_text} <span style='color:gray; font-size:small;'>({c_time})</span>", unsafe_allow_html=True)
 
             with st.form(key=f"cmt_{log['_id']}"):
               cmt_text = st.text_input("แสดงความคิดเห็น:")
