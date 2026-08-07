@@ -314,7 +314,6 @@ if st.sidebar.button("🚪 ออกจากระบบ", use_container_width=
 top_col1, top_col2 = st.columns([5, 1])
 
 with top_col2:
-  # นับจำนวนรายการที่ยังไม่ได้อ่านรวมทั้งผู้เข้าชมและคอมเมนต์โปรไฟล์
   unread_visitors = visitor_collection.count_documents({"profile_owner": clean_user, "is_read": False})
   unread_profile_cmts = profile_comments_collection.count_documents({"profile_owner": clean_user, "is_read": False})
   total_unread = unread_visitors + unread_profile_cmts
@@ -324,9 +323,7 @@ with top_col2:
   with st.popover(badge_label, use_container_width=True):
     st.markdown("#### 📬 การแจ้งเตือนล่าสุด")
     
-    # ดึงผู้เข้าชมล่าสุด
     recent_visitors = list(visitor_collection.find({"profile_owner": clean_user}).sort("visited_at", -1).limit(5))
-    # ดึงคอมเมนต์โปรไฟล์ล่าสุด
     recent_p_cmts = list(profile_comments_collection.find({"profile_owner": clean_user}).sort("created_at", -1).limit(5))
     
     if recent_visitors or recent_p_cmts:
@@ -348,7 +345,6 @@ with top_col2:
       else:
         st.caption("ยังไม่มีคอมเมนต์โปรไฟล์")
       
-      # ทำเครื่องหมายว่าอ่านแล้วทั้งหมดเมื่อเปิดดูกล่องจดหมาย
       visitor_collection.update_many(
           {"profile_owner": clean_user, "is_read": False},
           {"$set": {"is_read": True}}
@@ -723,14 +719,14 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
           st.info("🖼️ ไม่มีรูปโปรไฟล์")
       with f_col2:
         safe_friend_name = html.escape(selected_friend)
-        st.subheader(f"👤 โปรไฟล์ของ: {safe_friend_name}", unsafe_allow_html=True)
+        # แก้ไขจาก st.subheader มาเป็น st.markdown เพื่อรองรับ HTML อย่างปลอดภัย
+        st.markdown(f"### 👤 โปรไฟล์ของ: {safe_friend_name}")
         st.write(f"**Bio:** {friend_profile.get('bio', 'ยังไม่ได้เขียนอธิบายตัวเอง')}")
 
       # 💬 ส่วนกระดานคอมเมนต์หน้าโปรไฟล์ (Profile Guestbook)
       st.markdown("---")
       st.markdown(f"💬 **กระดานข้อความฝากถึง {selected_friend}:**")
       
-      # ฟอร์มฝากคอมเมนต์หน้าโปรไฟล์
       with st.form(key=f"profile_guestbook_{selected_friend}"):
         guest_msg = st.text_input("ฝากข้อความหรือทักทายโปรไฟล์นี้:")
         submit_guest_cmt = st.form_submit_button("📢 ส่งข้อความโปรไฟล์", use_container_width=True)
@@ -748,7 +744,6 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
           else:
             st.warning("กรุณากรอกข้อความก่อนส่ง")
 
-      # แสดงรายการคอมเมนต์โปรไฟล์ทั้งหมด
       profile_cmts_list = list(profile_comments_collection.find({"profile_owner": selected_friend}).sort("created_at", -1))
       if profile_cmts_list:
         for p_cmt in profile_cmts_list:
@@ -763,7 +758,7 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
 
       st.divider()
       safe_friend_title = html.escape(selected_friend)
-      st.subheader(f"📚 ผลงานทั้งหมดของ {safe_friend_title}", unsafe_allow_html=True)
+      st.markdown(f"### 📚 ผลงานทั้งหมดของ {safe_friend_title}")
       
       friend_logs = list(collection.find({"author": selected_friend}).sort("created_at", -1))
       if not friend_logs:
