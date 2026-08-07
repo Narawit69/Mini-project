@@ -106,6 +106,14 @@ st.markdown("""
         border: 1px solid #E2E8F0;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     }
+    .reply-box {
+        background-color: #F1F5F9;
+        border-left: 3px solid #3B82F6;
+        padding: 8px 12px;
+        margin-top: 6px;
+        border-radius: 4px;
+        font-size: 0.9rem;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -221,7 +229,6 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("#### 🎨 ตั้งค่าโปรไฟล์ & ความปลอดภัย")
 user_profile = get_cached_profile(clean_user)
 
-# 🛠️ ขยายเมนูตั้งค่าโปรไฟล์ให้รองรับการเปลี่ยนรหัสผ่านและลบบัญชี
 with st.sidebar.expander("⚙️ ตั้งค่าโปรไฟล์และบัญชี", expanded=False):
   with st.form("profile_form"):
     new_bio = st.text_area("คำอธิบายสั้นๆ (Bio):", value=user_profile.get("bio", ""))
@@ -243,9 +250,6 @@ with st.sidebar.expander("⚙️ ตั้งค่าโปรไฟล์แ�
       else:
         auth_check = user_auth_collection.find_one({"username": clean_user})
         if auth_check and verify_password(confirm_pass, auth_check["password"]):
-          update_data = {}
-          
-          # จัดการเรื่อง Bio และ รูปโปรไฟล์
           avatar_filename = user_profile.get("avatar", "")
           if avatar_file is not None:
             upload_avatar = cloudinary.uploader.upload(avatar_file, resource_type="image", folder="worklog_avatars")
@@ -257,7 +261,6 @@ with st.sidebar.expander("⚙️ ตั้งค่าโปรไฟล์แ�
               upsert=True
           )
 
-          # จัดการเรื่องเปลี่ยนรหัสผ่าน (ถ้ามีการกรอกช่องรหัสผ่านใหม่)
           if new_pass1 or new_pass2:
             if new_pass1 == new_pass2 and len(new_pass1) >= 4:
               hashed_new = hash_password(new_pass1)
@@ -288,7 +291,6 @@ with st.sidebar.expander("⚙️ ตั้งค่าโปรไฟล์แ�
       else:
         auth_check = user_auth_collection.find_one({"username": clean_user})
         if auth_check and verify_password(del_pass, auth_check["password"]):
-          # ลบข้อมูลทั้งหมดที่เกี่ยวข้องกับผู้ใช้นี้ออกจากฐานข้อมูล
           user_auth_collection.delete_one({"username": clean_user})
           profile_collection.delete_one({"author": clean_user})
           collection.delete_many({"author": clean_user})
@@ -514,27 +516,63 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             else:
               st.caption("🤍 ยังไม่มีคนถูกใจ")
 
+          # 💬 ส่วนแสดงความคิดเห็นและการตอบกลับ (Nested Comments)
           comments = log.get("comments", [])
           st.markdown("💬 **ความคิดเห็นทั้งหมด:**")
           if comments:
-            for c in comments:
+            for c_idx, c in enumerate(comments):
               with st.container(border=True):
                 c_user = html.escape(c['user'])
                 c_time = html.escape(c['time'])
                 st.markdown(f"👤 **{c_user}** <span style='color:gray; font-size:small;'>({c_time})</span>", unsafe_allow_html=True)
                 st.write(c['text'])
+
+                # แสดงรายการตอบกลับย่อย (Replies)
+                replies = c.get("replies", [])
+                if replies:
+                  for r in replies:
+                    r_user = html.escape(r['user'])
+                    r_time = html.escape(r['time'])
+                    st.markdown(f"""
+                        <div class='reply-box'>
+                            ↳ 👤 <b>{r_user}</b> <span style='color:gray; font-size:small;'>({r_time})</span><br>
+                            {r['text']}
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                # ฟอร์มตอบกลับความคิดเห็นนี้
+                with st.form(key=f"my_reply_form_{log['_id']}_{c_idx}"):
+                  reply_text = st.text_input("💬 ตอบกลับความเห็นนี้:", key=f"my_r_input_{log['_id']}_{c_idx}")
+                  submit_reply = st.form_submit_button("ส่งคำตอบกลับ", use_container_width=True)
+                  if submit_reply:
+                    if reply_text.strip():
+                      new_reply = {
+                          "user": clean_user,
+                          "text": reply_text.strip(),
+                          "time": datetime.now().strftime("%Y-%m-%d %H:%M")
+                      }
+                      # อัปเดตเพิ่มเข้าไปในอาเรย์ replies ของคอมเมนต์ตำแหน่ง c_idx
+                      collection.update_one(
+                          {"_id": log["_id"]},
+                          {"$push": {f"comments.{c_idx}.replies": new_reply}}
+                      )
+                      st.success("ตอบกลับเรียบร้อยแล้ว!")
+                      st.rerun()
+                    else:
+                      st.warning("กรุณาพิมพ์ข้อความก่อนส่ง")
           else:
             st.caption("ยังไม่มีความคิดเห็น")
 
           with st.form(key=f"my_cmt_{log['_id']}"):
-            comment_text = st.text_input("💬 แสดงความคิดเห็น:")
+            comment_text = st.text_input("💬 แสดงความคิดเห็นใหม่:")
             submit_comment = st.form_submit_button("ส่งคอมเมนต์", use_container_width=True)
             if submit_comment:
               if comment_text.strip():
                 new_comment = {
                     "user": clean_user,
                     "text": comment_text.strip(),
-                    "time": datetime.now().strftime("%Y-%m-%d %H:%M")
+                    "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "replies": []
                 }
                 collection.update_one({"_id": log["_id"]}, {"$push": {"comments": new_comment}})
                 st.success("ส่งคอมเมนต์เรียบร้อยแล้ว!")
@@ -628,16 +666,52 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
 
             comments = log.get("comments", [])
             st.markdown("💬 **ความคิดเห็น:**")
-            for c in comments:
-              c_user = html.escape(c['user'])
-              c_text = html.escape(c['text']) 
-              c_time = html.escape(c['time'])
-              st.markdown(f"- **{c_user}**: {c_text} <span style='color:gray; font-size:small;'>({c_time})</span>", unsafe_allow_html=True)
+            if comments:
+              for c_idx, c in enumerate(comments):
+                c_user = html.escape(c['user'])
+                c_text = html.escape(c['text']) 
+                c_time = html.escape(c['time'])
+                st.markdown(f"👤 **{c_user}**: {c_text} <span style='color:gray; font-size:small;'>({c_time})</span>", unsafe_allow_html=True)
+
+                # แสดงรายการตอบกลับย่อยในหน้าเพื่อน
+                replies = c.get("replies", [])
+                if replies:
+                  for r in replies:
+                    r_user = html.escape(r['user'])
+                    r_time = html.escape(r['time'])
+                    st.markdown(f"""
+                        <div class='reply-box'>
+                            ↳ 👤 <b>{r_user}</b> <span style='color:gray; font-size:small;'>({r_time})</span><br>
+                            {r['text']}
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                with st.form(key=f"friend_reply_{log['_id']}_{c_idx}"):
+                  r_text = st.text_input("ตอบกลับความเห็นนี้:", key=f"friend_r_input_{log['_id']}_{c_idx}")
+                  if st.form_submit_button("ส่งคำตอบกลับ"):
+                    if r_text.strip():
+                      new_reply = {
+                          "user": clean_user,
+                          "text": r_text.strip(),
+                          "time": datetime.now().strftime("%Y-%m-%d %H:%M")
+                      }
+                      collection.update_one(
+                          {"_id": log["_id"]},
+                          {"$push": {f"comments.{c_idx}.replies": new_reply}}
+                      )
+                      st.success("ส่งคำตอบกลับสำเร็จ!")
+                      st.rerun()
 
             with st.form(key=f"cmt_{log['_id']}"):
-              cmt_text = st.text_input("แสดงความคิดเห็น:")
+              cmt_text = st.text_input("แสดงความคิดเห็นใหม่:")
               if st.form_submit_button("ส่งคอมเมนต์"):
                 if cmt_text.strip():
-                  collection.update_one({"_id": log["_id"]}, {"$push": {"comments": {"user": clean_user, "text": cmt_text.strip(), "time": datetime.now().strftime("%Y-%m-%d %H:%M")}}})
+                  new_comment = {
+                      "user": clean_user,
+                      "text": cmt_text.strip(),
+                      "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                      "replies": []
+                  }
+                  collection.update_one({"_id": log["_id"]}, {"$push": {"comments": new_comment}})
                   st.success("ส่งคอมเมนต์สำเร็จ!")
                   st.rerun()
