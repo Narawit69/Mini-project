@@ -1,7 +1,7 @@
 from datetime import datetime
-import hashlib
 import io
 import os
+import bcrypt
 import streamlit as st
 from pymongo import MongoClient
 import cloudinary
@@ -18,13 +18,16 @@ profile_collection = db["profiles"]
 user_auth_collection = db["users"]
 visitor_collection = db["visitors"]
 
+# กำหนดค่าคงที่ (Global Constant)
 ITEMS_PER_PAGE = 5
 
+# สร้าง Index
 collection.create_index([("author", 1), ("created_at", -1)])
 profile_collection.create_index([("author", 1)], unique=True)
 user_auth_collection.create_index([("username", 1)], unique=True)
 visitor_collection.create_index([("profile_owner", 1), ("visited_at", -1)])
 
+# ตั้งค่า Cloudinary
 cloudinary.config(
     cloud_name=st.secrets["cloudinary"]["cloud_name"],
     api_key=st.secrets["cloudinary"]["api_key"],
@@ -104,8 +107,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# 🔐 ฟังก์ชันแฮชและตรวจสอบรหัสผ่านด้วย bcrypt
 def hash_password(password):
-  return hashlib.sha256(password.encode()).hexdigest()
+  return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+def verify_password(password, hashed_password):
+  return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 if "logged_in_user" not in st.session_state:
   st.session_state.logged_in_user = None
@@ -136,7 +143,7 @@ if not st.session_state.logged_in_user:
       if st.button("🚀 เข้าสู่ระบบทันที", use_container_width=True):
         if login_user and login_pass:
           user_record = user_auth_collection.find_one({"username": login_user})
-          if user_record and user_record["password"] == hash_password(login_pass):
+          if user_record and verify_password(login_pass, user_record["password"]):
             st.session_state.logged_in_user = login_user
             st.success("เข้าสู่ระบบสำเร็จ!")
             st.rerun()
@@ -218,7 +225,7 @@ with st.sidebar.form("profile_form"):
       st.error("กรุณากรอกรหัสผ่านเพื่อยืนยันการเปลี่ยนแปลง")
     else:
       auth_check = user_auth_collection.find_one({"username": clean_user})
-      if auth_check and auth_check["password"] == hash_password(confirm_pass):
+      if auth_check and verify_password(confirm_pass, auth_check["password"]):
         avatar_filename = user_profile.get("avatar", "")
         if avatar_file is not None:
           upload_avatar = cloudinary.uploader.upload(avatar_file, resource_type="image", folder="worklog_avatars")
@@ -282,7 +289,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
       st.info("🖼️ ไม่มีรูปโปรไฟล์")
   with col_p2:
     st.subheader(f"ผู้ใช้งาน: {clean_user}")
-    st.write(f"**Bio:** {user_profile.get('bio', 'ยังไม่มีคำอธิบาย')}")
+    st.write(f"**Bio:** {user_profile.get('bio', 'ยังไม่ได้เขียนอธิบายตัวเอง')}")
 
   st.divider()
 
@@ -428,7 +435,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
               else:
                 st.markdown(f"📄 [คลิกเพื่อเปิดดูไฟล์เอกสาร]({att_url})", unsafe_allow_html=True)
 
-          # 💖 เพิ่มปุ่มกดไลก์ในโพสต์ของตัวเอง
           likes_list = log.get("likes", [])
           total_likes = len(likes_list)
           is_liked_by_me = clean_user in likes_list
@@ -449,7 +455,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             else:
               st.caption("🤍 ยังไม่มีคนถูกใจ")
 
-          # 💬 เพิ่มกล่องแสดงความคิดเห็นและฟอร์มส่งคอมเมนต์
           comments = log.get("comments", [])
           st.markdown("💬 **ความคิดเห็นทั้งหมด:**")
           if comments:
@@ -535,7 +540,7 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
           st.info("🖼️ ไม่มีรูปโปรไฟล์")
       with f_col2:
         st.subheader(f"👤 โปรไฟล์ของ: {selected_friend}")
-        st.write(f"**Bio:** {friend_profile.get('bio', 'ยังไม่มีคำอธิบาย')}")
+        st.write(f"**Bio:** {friend_profile.get('bio', 'ยังไม่ได้เขียนอธิบายตัวเอง')}")
 
       st.divider()
       st.subheader(f"📚 ผลงานทั้งหมดของ {selected_friend}")
