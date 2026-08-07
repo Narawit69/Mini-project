@@ -18,16 +18,13 @@ profile_collection = db["profiles"]
 user_auth_collection = db["users"]
 visitor_collection = db["visitors"]
 
-# กำหนดค่าคงที่ (Global Constant)
 ITEMS_PER_PAGE = 5
 
-# สร้าง Index
 collection.create_index([("author", 1), ("created_at", -1)])
 profile_collection.create_index([("author", 1)], unique=True)
 user_auth_collection.create_index([("username", 1)], unique=True)
 visitor_collection.create_index([("profile_owner", 1), ("visited_at", -1)])
 
-# ตั้งค่า Cloudinary
 cloudinary.config(
     cloud_name=st.secrets["cloudinary"]["cloud_name"],
     api_key=st.secrets["cloudinary"]["api_key"],
@@ -232,9 +229,7 @@ with st.sidebar.form("profile_form"):
             {"$set": {"bio": new_bio, "avatar": avatar_filename}},
             upsert=True
         )
-        # 🔑 สั่งล้างแคชโปรไฟล์ทันที เพื่อให้หน้าเว็บดึงข้อมูลใหม่ขึ้นมาแสดงผลทันที
         st.cache_data.clear()
-        
         st.success("บันทึกโปรไฟล์สำเร็จ!")
         st.rerun()
       else:
@@ -245,7 +240,6 @@ if st.sidebar.button("🚪 ออกจากระบบ", use_container_width=
   st.session_state.logged_in_user = None
   st.rerun()
 
-# --- ส่วนหัวหลัก พร้อมระบบแจ้งเตือนกล่องจดหมายมุมบนขวา ---
 top_col1, top_col2 = st.columns([5, 1])
 
 with top_col2:
@@ -434,6 +428,55 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
               else:
                 st.markdown(f"📄 [คลิกเพื่อเปิดดูไฟล์เอกสาร]({att_url})", unsafe_allow_html=True)
 
+          # 💖 เพิ่มปุ่มกดไลก์ในโพสต์ของตัวเอง
+          likes_list = log.get("likes", [])
+          total_likes = len(likes_list)
+          is_liked_by_me = clean_user in likes_list
+
+          st.markdown("---")
+          col_like1, col_like2 = st.columns([1, 5])
+          with col_like1:
+            like_btn_label = f"❤️ {total_likes}" if is_liked_by_me else f"🤍 {total_likes}"
+            if st.button(like_btn_label, key=f"my_like_{log['_id']}", use_container_width=True):
+              if is_liked_by_me:
+                collection.update_one({"_id": log["_id"]}, {"$pull": {"likes": clean_user}})
+              else:
+                collection.update_one({"_id": log["_id"]}, {"$addToSet": {"likes": clean_user}})
+              st.rerun()
+          with col_like2:
+            if likes_list:
+              st.caption(f"❤️ ถูกใจโดย: {', '.join(likes_list)}")
+            else:
+              st.caption("🤍 ยังไม่มีคนถูกใจ")
+
+          # 💬 เพิ่มกล่องแสดงความคิดเห็นและฟอร์มส่งคอมเมนต์
+          comments = log.get("comments", [])
+          st.markdown("💬 **ความคิดเห็นทั้งหมด:**")
+          if comments:
+            for c in comments:
+              with st.container(border=True):
+                st.markdown(f"👤 **{c['user']}** <span style='color:gray; font-size:small;'>({c['time']})</span>", unsafe_allow_html=True)
+                st.write(c['text'])
+          else:
+            st.caption("ยังไม่มีความคิดเห็น")
+
+          with st.form(key=f"my_cmt_{log['_id']}"):
+            comment_text = st.text_input("💬 แสดงความคิดเห็น:")
+            submit_comment = st.form_submit_button("ส่งคอมเมนต์", use_container_width=True)
+            if submit_comment:
+              if comment_text.strip():
+                new_comment = {
+                    "user": clean_user,
+                    "text": comment_text.strip(),
+                    "time": datetime.now().strftime("%Y-%m-%d %H:%M")
+                }
+                collection.update_one({"_id": log["_id"]}, {"$push": {"comments": new_comment}})
+                st.success("ส่งคอมเมนต์เรียบร้อยแล้ว!")
+                st.rerun()
+              else:
+                st.warning("กรุณาพิมพ์ข้อความคอมเมนต์ก่อนส่ง")
+
+          st.markdown("---")
           col_act1, col_act2 = st.columns(2)
           with col_act1:
             if st.button("✏️ แก้ไขบันทึกนี้", key=f"btn_edit_{log['_id']}", use_container_width=True):
