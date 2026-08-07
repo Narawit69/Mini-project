@@ -532,6 +532,27 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             new_title = st.text_input("หัวข้อเรื่อง / งานที่ทำ", value=log['title'])
             new_content = st.text_area("รายละเอียดการทำงาน", value=log['content'])
 
+            # --- จัดการไฟล์แนบเดิมในโหมดแก้ไข ---
+            existing_attachments = log.get("attachments", [])
+            if not existing_attachments and log.get("attachment"):
+              existing_attachments = [log.get("attachment")]
+            
+            kept_attachments = []
+            if existing_attachments:
+              st.write("📎 **ไฟล์แนบเดิม (ติ๊กเลือกเพื่อเก็บรักษาไว้):**")
+              for i, att_url in enumerate(existing_attachments):
+                is_kept = st.checkbox(f"เก็บไฟล์เดิมที่ {i+1} ({att_url.split('/')[-1][:20]}...)", value=True, key=f"keep_att_{log['_id']}_{i}")
+                if is_kept:
+                  kept_attachments.append(att_url)
+
+            # --- เพิ่มช่องอัปโหลดไฟล์ใหม่เพิ่มเติมในโหมดแก้ไข ---
+            new_uploaded_files = st.file_uploader(
+                "➕ แนบไฟล์เพิ่มเติม (รูปภาพ / เอกสาร / วิดีโอ)", 
+                type=["png", "jpg", "jpeg", "pdf", "mp4", "mov", "avi"],
+                accept_multiple_files=True,
+                key=f"edit_uploader_{log['_id']}"
+            )
+
             col_sub1, col_sub2 = st.columns(2)
             with col_sub1:
               update_btn = st.form_submit_button("💾 บันทึกการแก้ไข", use_container_width=True)
@@ -540,6 +561,17 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
 
             if update_btn:
               if new_title and new_content:
+                # อัปโหลดไฟล์ใหม่ที่เพิ่มเข้ามาขึ้น Cloudinary
+                final_attachments = kept_attachments.copy()
+                if new_uploaded_files:
+                  for new_file in new_uploaded_files:
+                    upload_res = cloudinary.uploader.upload(
+                        new_file,
+                        resource_type="auto",
+                        folder="worklog_uploads"
+                    )
+                    final_attachments.append(upload_res.get("secure_url"))
+
                 update_result = collection.update_one(
                     {"_id": log["_id"], "author": clean_user},
                     {
@@ -548,12 +580,13 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
                             "category": new_category,
                             "title": new_title,
                             "content": new_content,
+                            "attachments": final_attachments
                         }
                     }
                 )
                 if update_result.modified_count > 0 or update_result.matched_count > 0:
                   st.session_state[edit_key] = False
-                  st.success("แก้ไขข้อมูลสำเร็จเรียบร้อยแล้ว! 🎉")
+                  st.success("แก้ไขข้อมูลและไฟล์แนบสำเร็จเรียบร้อยแล้ว! 🎉")
                   st.rerun()
                 else:
                   st.error("❌ ไม่มีสิทธิ์แก้ไขข้อมูลนี้")
