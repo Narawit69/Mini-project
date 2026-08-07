@@ -615,7 +615,10 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
   st.write("เลือกดูโปรไฟล์และผลงานของเพื่อนร่วมทีม พร้อมส่งข้อความคอมเมนต์และกดไลก์ให้กำลังใจกันได้ที่นี่ครับ!")
   st.markdown("<br>", unsafe_allow_html=True)
 
-  all_authors = collection.distinct("author")
+  # แก้ไขจุดที่ดึงรายชื่อจาก users แทน logs เพื่อให้เห็นชื่อทุกคนที่สมัครสมาชิก
+  all_users_cursor = user_auth_collection.find({}, {"username": 1})
+  all_authors = [u["username"] for u in all_users_cursor]
+  
   other_authors = [a for a in all_authors if a.lower() != clean_user.lower()]
 
   if len(other_authors) == 0:
