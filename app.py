@@ -70,12 +70,12 @@ def generate_pdf_report(username, logs_data):
       y_position = height - 50
       
     p.setFont("Helvetica-Bold", 11)
-    p.drawString(50, y_position, f"{idx}. [{log.get('category')}] {log.get('title')} ({log.get('date')})")
+    p.drawString(50, y_position, f"{idx}. [{html.escape(str(log.get('category', '')))}] {html.escape(str(log.get('title', '')))} ({html.escape(str(log.get('date', '')))})")
     y_position -= 18
     
     p.setFont("Helvetica", 10)
     content_text = log.get('content', '')
-    p.drawString(70, y_position, f"Details: {content_text[:80]}...")
+    p.drawString(70, y_position, f"Details: {html.escape(content_text[:80])}...")
     y_position -= 30
     
   p.save()
@@ -203,7 +203,7 @@ if not st.session_state.logged_in_user:
 # =====================================================================
 clean_user = st.session_state.logged_in_user
 
-st.sidebar.markdown(f"### 👋 สวัสดีคุณ, **{clean_user}**")
+st.sidebar.markdown(f"### 👋 สวัสดีคุณ, **{html.escape(clean_user)}**")
 st.sidebar.markdown("---")
 st.sidebar.markdown("#### 📌 เมนูหลัก")
 
@@ -467,7 +467,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
     cat_cols = st.columns(len(cat_counts) if len(cat_counts) > 0 else 1)
     for idx, (cat_name, count_val) in enumerate(cat_counts.items()):
       with cat_cols[idx % len(cat_cols)]:
-        st.info(f"**{cat_name}**\n\n {count_val} รายการ")
+        st.info(f"**{html.escape(cat_name)}**\n\n {count_val} รายการ")
   else:
     st.info("💡 ไม่มีข้อมูลเพียงพอสำหรับการสรุปสถิติในเงื่อนไขนี้")
 
@@ -502,13 +502,16 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
     user_logs = list(collection.find(query_filter).sort("created_at", -1).skip(skip_count).limit(ITEMS_PER_PAGE))
 
     for log in user_logs:
-      with st.expander(f"📌 [{log['category']}] {log['title']} ({log['date']})"):
+      safe_log_title = html.escape(log['title'])
+      safe_log_cat = html.escape(log['category'])
+      safe_log_date = html.escape(log['date'])
+      with st.expander(f"📌 [{safe_log_cat}] {safe_log_title} ({safe_log_date})"):
         edit_key = f"edit_mode_{log['_id']}"
         if edit_key not in st.session_state:
           st.session_state[edit_key] = False
 
         if not st.session_state[edit_key]:
-          st.write(f"**รายละเอียด:** {log['content']}")
+          st.markdown(f"**รายละเอียด:** {html.escape(log['content'])}")
           attachments_to_show = log.get("attachments", [])
           if attachments_to_show:
             st.write("📎 **ไฟล์แนบ:**")
@@ -537,7 +540,8 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
               st.rerun()
           with col_like2:
             if likes_list:
-              st.caption(f"❤️ ถูกใจโดย: {', '.join(likes_list)}")
+              safe_likes = ", ".join([html.escape(l) for l in likes_list])
+              st.caption(f"❤️ ถูกใจโดย: {safe_likes}")
             else:
               st.caption("🤍 ยังไม่มีคนถูกใจ")
 
@@ -549,17 +553,18 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
                 c_user = html.escape(c['user'])
                 c_time = html.escape(c['time'])
                 st.markdown(f"👤 **{c_user}** <span style='color:gray; font-size:small;'>({c_time})</span>", unsafe_allow_html=True)
-                st.write(c['text'])
+                st.markdown(html.escape(c['text']))
 
                 replies = c.get("replies", [])
                 if replies:
                   for r in replies:
                     r_user = html.escape(r['user'])
                     r_time = html.escape(r['time'])
+                    r_text = html.escape(r['text'])
                     st.markdown(f"""
                         <div class='reply-box'>
                             ↳ 👤 <b>{r_user}</b> <span style='color:gray; font-size:small;'>({r_time})</span><br>
-                            {r['text']}
+                            {r_text}
                         </div>
                     """, unsafe_allow_html=True)
 
@@ -701,7 +706,11 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
   if len(other_authors) == 0:
     st.info("ยังไม่มีผู้ใช้งานคนอื่นในระบบเลยครับ ชวนเพื่อนมาสมัครใช้งานกันเถอะ!")
   else:
-    selected_friend = st.selectbox("🔍 เลือกรายชื่อเพื่อนที่คุณต้องการเยี่ยมชม:", other_authors)
+    # ป้องกันการแสดงผล XSS ใน Selectbox ด้วยการทำ Mapping ชื่อที่ปลอดภัย
+    friend_display_map = {html.escape(a): a for a in other_authors}
+    selected_friend_display = st.selectbox("🔍 เลือกรายชื่อเพื่อนที่คุณต้องการเยี่ยมชม:", list(friend_display_map.keys()))
+    selected_friend = friend_display_map[selected_friend_display]
+
     if selected_friend:
       visitor_key = f"visited_{selected_friend}"
       if visitor_key not in st.session_state:
@@ -720,11 +729,11 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
       with f_col2:
         safe_friend_name = html.escape(selected_friend)
         st.markdown(f"### 👤 โปรไฟล์ของ: {safe_friend_name}")
-        st.write(f"**Bio:** {friend_profile.get('bio', 'ยังไม่ได้เขียนอธิบายตัวเอง')}")
+        st.markdown(f"**Bio:** {html.escape(friend_profile.get('bio', 'ยังไม่ได้เขียนอธิบายตัวเอง'))}")
 
       # 💬 ส่วนกระดานคอมเมนต์หน้าโปรไฟล์ พร้อมระบบแก้ไข, ลบ และตอบกลับ (Reply)
       st.markdown("---")
-      st.markdown(f"💬 **กระดานข้อความฝากถึง {selected_friend}:**")
+      st.markdown(f"💬 **กระดานข้อความฝากถึง {html.escape(selected_friend)}:**")
       
       with st.form(key=f"profile_guestbook_{selected_friend}"):
         guest_msg = st.text_input("ฝากข้อความหรือทักทายโปรไฟล์นี้:")
@@ -754,28 +763,26 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
             
             st.markdown(f"👤 **{p_sender}** <span style='color:gray; font-size:small;'>({p_time})</span>", unsafe_allow_html=True)
             
-            # ตรวจสอบสถานะการแก้ไขคอมเมนต์โปรไฟล์นี้
             edit_p_key = f"edit_p_cmt_{p_cmt['_id']}"
             if edit_p_key not in st.session_state:
               st.session_state[edit_p_key] = False
 
             if not st.session_state[edit_p_key]:
-              st.write(p_text)
+              st.markdown(html.escape(p_text))
 
-              # แสดงรายการตอบกลับย่อย (Replies)
               p_replies = p_cmt.get("replies", [])
               if p_replies:
                 for r_item in p_replies:
                   r_user = html.escape(r_item.get('user', ''))
                   r_time = html.escape(r_item.get('time', ''))
+                  r_text = html.escape(r_item.get('text', ''))
                   st.markdown(f"""
                       <div class='reply-box'>
                           ↳ 👤 <b>{r_user}</b> <span style='color:gray; font-size:small;'>({r_time})</span><br>
-                          {r_item.get('text', '')}
+                          {r_text}
                       </div>
                   """, unsafe_allow_html=True)
 
-              # ฟอร์มตอบกลับคอมเมนต์โปรไฟล์ (ใครก็ตอบได้ หรือเน้นเจ้าของโปรไฟล์)
               with st.form(key=f"p_reply_form_{p_cmt['_id']}"):
                 p_rep_text = st.text_input("💬 ตอบกลับข้อความนี้:", key=f"p_rep_input_{p_cmt['_id']}")
                 if st.form_submit_button("ส่งคำตอบกลับ", use_container_width=True):
@@ -794,7 +801,6 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
                   else:
                     st.warning("กรุณาพิมพ์ข้อความก่อนส่ง")
 
-              # ปุ่มแก้ไข/ลบ สำหรับเจ้าของคอมเมนต์ หรือ เจ้าของโปรไฟล์
               if clean_user == p_cmt.get('sender') or clean_user == selected_friend:
                 act_c1, act_c2 = st.columns(2)
                 with act_c1:
@@ -807,7 +813,6 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
                     st.success("ลบข้อความสำเร็จ!")
                     st.rerun()
             else:
-              # ฟอร์มแก้ไขข้อความคอมเมนต์
               with st.form(key=f"form_edit_p_{p_cmt['_id']}"):
                 new_p_text = st.text_area("แก้ไขข้อความ:", value=p_text)
                 if st.form_submit_button("💾 บันทึกการแก้ไข", use_container_width=True):
@@ -830,8 +835,11 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
         st.info("เพื่อนยังไม่มีบันทึกผลงานในระบบครับ")
       else:
         for log in friend_logs:
-          with st.expander(f"📌 [{log['category']}] {log['title']} ({log['date']})"):
-            st.write(f"**รายละเอียด:** {log['content']}")
+          safe_f_log_title = html.escape(log['title'])
+          safe_f_log_cat = html.escape(log['category'])
+          safe_f_log_date = html.escape(log['date'])
+          with st.expander(f"📌 [{safe_f_log_cat}] {safe_f_log_title} ({safe_f_log_date})"):
+            st.markdown(f"**รายละเอียด:** {html.escape(log['content'])}")
             
             likes_list = log.get("likes", [])
             is_liked = clean_user in likes_list
@@ -856,10 +864,11 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
                   for r in replies:
                     r_user = html.escape(r['user'])
                     r_time = html.escape(r['time'])
+                    r_text = html.escape(r['text'])
                     st.markdown(f"""
                         <div class='reply-box'>
                             ↳ 👤 <b>{r_user}</b> <span style='color:gray; font-size:small;'>({r_time})</span><br>
-                            {r['text']}
+                            {r_text}
                         </div>
                     """, unsafe_allow_html=True)
 
