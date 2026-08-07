@@ -2,6 +2,7 @@ from datetime import datetime
 import io
 import os
 import bcrypt
+import hashlib
 import streamlit as st
 from pymongo import MongoClient
 import cloudinary
@@ -107,12 +108,17 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 🔐 ฟังก์ชันแฮชและตรวจสอบรหัสผ่านด้วย bcrypt
+# 🔐 ฟังก์ชันแฮชและตรวจสอบรหัสผ่าน (รองรับทั้ง bcrypt และ SHA-256 เก่า)
 def hash_password(password):
   return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 def verify_password(password, hashed_password):
-  return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
+  if len(hashed_password) == 64:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest() == hashed_password
+  try:
+    return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
+  except ValueError:
+    return False
 
 if "logged_in_user" not in st.session_state:
   st.session_state.logged_in_user = None
