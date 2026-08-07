@@ -83,7 +83,7 @@ def generate_pdf_report(username, logs_data):
 # ตั้งค่าหน้าเว็บแบบ Wide Mode
 st.set_page_config(page_title="My Daily Work Log", page_icon="💻", layout="wide")
 
-# เพิ่ม Custom CSS สำหรับดีไซน์กล่องคอมเมนต์และการ์ดต่างๆ ให้สวยงามเด่นชัด
+# เพิ่ม Custom CSS สำหรับปรับแต่งหน้าตาหลัก
 st.markdown("""
     <style>
     .main-title {
@@ -103,13 +103,6 @@ st.markdown("""
         border-radius: 12px;
         border: 1px solid #E2E8F0;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-    }
-    .comment-card {
-        background-color: #F1F5F9;
-        padding: 10px 15px;
-        border-radius: 8px;
-        margin-bottom: 8px;
-        border-left: 4px solid #3B82F6;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -489,7 +482,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
               else:
                 st.markdown(f"📄 [คลิกเพื่อเปิดดูไฟล์เอกสาร]({att_url})", unsafe_allow_html=True)
 
-          # แสดงรายชื่อคนกดไลก์ในโพสต์ของตัวเองด้วย
           likes_list = log.get("likes", [])
           if likes_list:
             st.markdown(f"❤️ **ถูกใจโดย:** {', '.join(likes_list)} ({len(likes_list)} คน)")
@@ -499,12 +491,9 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             st.markdown("---")
             st.markdown("💬 **ความคิดเห็น:**")
             for c in comments:
-              st.markdown(f"""
-                  <div class="comment-card">
-                      <b>👤 {c['user']}</b> <span style='color:gray; font-size:small;'>({c['time']})</span><br>
-                      {c['text']}
-                  </div>
-              """, unsafe_allow_html=True)
+              with st.container(border=True):
+                st.markdown(f"👤 **{c['user']}** <span style='color:gray; font-size:small;'>({c['time']})</span>", unsafe_allow_html=True)
+                st.write(c['text'])
 
           st.markdown("---")
           col_act1, col_act2 = st.columns(2)
@@ -709,7 +698,6 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
                 else:
                   st.markdown(f"📄 [คลิกเพื่อเปิดดูไฟล์เอกสาร]({att_url})", unsafe_allow_html=True)
 
-            # ระบบ Like / Reaction พร้อมแสดงรายชื่อคนกดไลก์ชัดเจน
             likes_list = log.get("likes", [])
             total_likes = len(likes_list)
             is_liked_by_me = clean_user in likes_list
@@ -736,17 +724,13 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
               else:
                 st.caption("🤍 ยังไม่มีคนถูกใจ เป็นคนแรกเลยสิ!")
 
-            # ส่วนคอมเมนต์ที่ดีไซน์ใหม่ให้อ่านง่ายเป็นสัดส่วน
             comments = log.get("comments", [])
             st.markdown("💬 **ความคิดเห็นทั้งหมด:**")
             if comments:
               for c in comments:
-                st.markdown(f"""
-                    <div class="comment-card">
-                        <b>👤 {c['user']}</b> <span style='color:gray; font-size:small;'>({c['time']})</span><br>
-                        {c['text']}
-                    </div>
-                """, unsafe_allow_html=True)
+                with st.container(border=True):
+                  st.markdown(f"👤 **{c['user']}** <span style='color:gray; font-size:small;'>({c['time']})</span>", unsafe_allow_html=True)
+                  st.write(c['text'])
             else:
               st.caption("ยังไม่มีความคิดเห็น เป็นคนแรกที่คอมเมนต์เลยสิ!")
 
