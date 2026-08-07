@@ -595,7 +595,19 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             new_title = st.text_input("หัวข้อเรื่อง / งานที่ทำ", value=log['title'])
             new_content = st.text_area("รายละเอียดการทำงาน", value=log['content'])
             
-            # 📎 เพิ่มช่องอัปโหลดไฟล์แนบเพิ่มเติมในโหมดแก้ไข
+            # 🗑️ ส่วนเลือกติ๊กเพื่อลบไฟล์แนบเก่า
+            existing_attachments = log.get("attachments", [])
+            selected_to_remove = []
+            if existing_attachments:
+              st.markdown("🗑️ **เลือกไฟล์แนบที่ต้องการลบออก:**")
+              for att_idx, att_url in enumerate(existing_attachments):
+                # ตัดชื่อไฟล์สั้นๆ มาแสดงผลเพื่อความสวยงาม
+                file_name_display = att_url.split("/")[-1][:30]
+                is_checked = st.checkbox(f"ลบไฟล์: {file_name_display}...", key=f"del_file_{log['_id']}_{att_idx}")
+                if is_checked:
+                  selected_to_remove.append(att_url)
+
+            # 📎 ส่วนอัปโหลดไฟล์แนบเพิ่มเติม
             new_uploaded_files = st.file_uploader(
                 "แนบไฟล์หลักฐานเพิ่มเติม (เลือกได้หลายไฟล์: รูปภาพ / เอกสาร / วิดีโอ)", 
                 type=["png", "jpg", "jpeg", "pdf", "mp4", "mov", "avi"],
@@ -604,14 +616,14 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             )
             
             if st.form_submit_button("💾 บันทึกการแก้ไข", use_container_width=True):
-              # ดึงรายการไฟล์แนบเดิมที่มีอยู่แล้ว
-              existing_attachments = log.get("attachments", [])
+              # กรองไฟล์เก่าออกโดยเอาเฉพาะไฟล์ที่ไม่ได้ถูกติ๊กเลือกให้ลบ
+              updated_attachments = [url for url in existing_attachments if url not in selected_to_remove]
               
-              # ถ้ามีการอัปโหลดไฟล์ใหม่เพิ่มเข้ามา ให้ส่งขึ้น Cloudinary แล้วรวมกับของเดิม
+              # ถ้ามีการอัปโหลดไฟล์ใหม่เพิ่มเข้ามา ให้ส่งขึ้น Cloudinary แล้วรวมเข้าไป
               if new_uploaded_files:
                 for uf in new_uploaded_files:
                   upload_res = cloudinary.uploader.upload(uf, resource_type="auto", folder="worklog_uploads")
-                  existing_attachments.append(upload_res.get("secure_url"))
+                  updated_attachments.append(upload_res.get("secure_url"))
 
               collection.update_one(
                   {"_id": log["_id"], "author": clean_user}, 
@@ -621,7 +633,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
                           "category": new_category, 
                           "title": new_title, 
                           "content": new_content,
-                          "attachments": existing_attachments
+                          "attachments": updated_attachments
                       }
                   }
               )
