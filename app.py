@@ -232,6 +232,9 @@ with st.sidebar.form("profile_form"):
             {"$set": {"bio": new_bio, "avatar": avatar_filename}},
             upsert=True
         )
+        # 🔑 สั่งล้างแคชโปรไฟล์ทันที เพื่อให้หน้าเว็บดึงข้อมูลใหม่ขึ้นมาแสดงผลทันที
+        st.cache_data.clear()
+        
         st.success("บันทึกโปรไฟล์สำเร็จ!")
         st.rerun()
       else:
