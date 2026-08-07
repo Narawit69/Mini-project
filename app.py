@@ -3,7 +3,7 @@ import io
 import os
 import bcrypt
 import hashlib
-import html  # 📌 นำเข้าไลบรารีสำหรับป้องกัน XSS 
+import html
 import streamlit as st
 from pymongo import MongoClient
 import cloudinary
@@ -109,7 +109,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 🔐 ฟังก์ชันแฮชและตรวจสอบรหัสผ่าน (รองรับทั้ง bcrypt และ SHA-256 เก่า)
+# 🔐 ฟังก์ชันแฮชและตรวจสอบรหัสผ่าน
 def hash_password(password):
   return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
@@ -218,36 +218,88 @@ if btn_nav2:
 nav_mode = st.session_state.nav_mode
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("#### 🎨 ตั้งค่าโปรไฟล์ส่วนตัว")
+st.sidebar.markdown("#### 🎨 ตั้งค่าโปรไฟล์ & ความปลอดภัย")
 user_profile = get_cached_profile(clean_user)
 
-with st.sidebar.form("profile_form"):
-  new_bio = st.text_area("คำอธิบายสั้นๆ (Bio):", value=user_profile.get("bio", ""))
-  avatar_file = st.file_uploader("เปลี่ยนรูปโปรไฟล์", type=["png", "jpg", "jpeg"])
-  confirm_pass = st.text_input("🔑 ยืนยันรหัสผ่านเพื่อบันทึก", type="password", placeholder="ใส่รหัสผ่านของคุณ")
-  save_profile = st.form_submit_button("💾 บันทึกโปรไฟล์", use_container_width=True)
+# 🛠️ ขยายเมนูตั้งค่าโปรไฟล์ให้รองรับการเปลี่ยนรหัสผ่านและลบบัญชี
+with st.sidebar.expander("⚙️ ตั้งค่าโปรไฟล์และบัญชี", expanded=False):
+  with st.form("profile_form"):
+    new_bio = st.text_area("คำอธิบายสั้นๆ (Bio):", value=user_profile.get("bio", ""))
+    avatar_file = st.file_uploader("เปลี่ยนรูปโปรไฟล์", type=["png", "jpg", "jpeg"])
+    
+    st.markdown("---")
+    st.subheader("🔑 เปลี่ยนรหัสผ่านใหม่")
+    old_pass = st.text_input("รหัสผ่านเดิม", type="password", placeholder="กรอกรหัสผ่านปัจจุบัน")
+    new_pass1 = st.text_input("รหัสผ่านใหม่", type="password", placeholder="กรอกรหัสผ่านใหม่")
+    new_pass2 = st.text_input("ยืนยันรหัสผ่านใหม่", type="password", placeholder="กรอกรหัสผ่านใหม่อีกครั้ง")
 
-  if save_profile:
-    if not confirm_pass:
-      st.error("กรุณากรอกรหัสผ่านเพื่อยืนยันการเปลี่ยนแปลง")
-    else:
-      auth_check = user_auth_collection.find_one({"username": clean_user})
-      if auth_check and verify_password(confirm_pass, auth_check["password"]):
-        avatar_filename = user_profile.get("avatar", "")
-        if avatar_file is not None:
-          upload_avatar = cloudinary.uploader.upload(avatar_file, resource_type="image", folder="worklog_avatars")
-          avatar_filename = upload_avatar.get("secure_url")
-        
-        profile_collection.update_one(
-            {"author": clean_user},
-            {"$set": {"bio": new_bio, "avatar": avatar_filename}},
-            upsert=True
-        )
-        st.cache_data.clear()
-        st.success("บันทึกโปรไฟล์สำเร็จ!")
-        st.rerun()
+    st.markdown("---")
+    confirm_pass = st.text_input("🛡️ ยืนยันรหัสผ่านเดิมเพื่อบันทึก", type="password", placeholder="จำเป็นต้องใส่เพื่อบันทึก")
+    save_profile = st.form_submit_button("💾 บันทึกการเปลี่ยนแปลง", use_container_width=True)
+
+    if save_profile:
+      if not confirm_pass:
+        st.error("กรุณากรอกรหัสผ่านเดิมเพื่อยืนยัน")
       else:
-        st.error("❌ รหัสผ่านไม่ถูกต้อง! ไม่อนุญาตให้แก้ไขโปรไฟล์")
+        auth_check = user_auth_collection.find_one({"username": clean_user})
+        if auth_check and verify_password(confirm_pass, auth_check["password"]):
+          update_data = {}
+          
+          # จัดการเรื่อง Bio และ รูปโปรไฟล์
+          avatar_filename = user_profile.get("avatar", "")
+          if avatar_file is not None:
+            upload_avatar = cloudinary.uploader.upload(avatar_file, resource_type="image", folder="worklog_avatars")
+            avatar_filename = upload_avatar.get("secure_url")
+          
+          profile_collection.update_one(
+              {"author": clean_user},
+              {"$set": {"bio": new_bio, "avatar": avatar_filename}},
+              upsert=True
+          )
+
+          # จัดการเรื่องเปลี่ยนรหัสผ่าน (ถ้ามีการกรอกช่องรหัสผ่านใหม่)
+          if new_pass1 or new_pass2:
+            if new_pass1 == new_pass2 and len(new_pass1) >= 4:
+              hashed_new = hash_password(new_pass1)
+              user_auth_collection.update_one(
+                  {"username": clean_user},
+                  {"$set": {"password": hashed_new}}
+              )
+              st.success("เปลี่ยนรหัสผ่านและอัปเดตโปรไฟล์สำเร็จ!")
+            else:
+              st.error("❌ รหัสผ่านใหม่ไม่ตรงกัน หรือสั้นเกินไป (อย่างน้อย 4 ตัวอักษร)")
+          else:
+            st.success("บันทึกโปรไฟล์สำเร็จ!")
+
+          st.cache_data.clear()
+          st.rerun()
+        else:
+          st.error("❌ ยืนยันรหัสผ่านเดิมไม่ถูกต้อง!")
+
+  st.markdown("---")
+  st.markdown("⚠️ **โซนอันตราย (Danger Zone)**")
+  with st.form("delete_account_form"):
+    del_pass = st.text_input("รหัสผ่านเพื่อยืนยันการลบบัญชี", type="password", placeholder="ใส่รหัสผ่านของคุณ")
+    delete_account_btn = st.form_submit_button("🗑️ ลบบัญชีผู้ใช้นี้ถาวร", use_container_width=True)
+
+    if delete_account_btn:
+      if not del_pass:
+        st.error("กรุณากรอกรหัสผ่านเพื่อยืนยัน")
+      else:
+        auth_check = user_auth_collection.find_one({"username": clean_user})
+        if auth_check and verify_password(del_pass, auth_check["password"]):
+          # ลบข้อมูลทั้งหมดที่เกี่ยวข้องกับผู้ใช้นี้ออกจากฐานข้อมูล
+          user_auth_collection.delete_one({"username": clean_user})
+          profile_collection.delete_one({"author": clean_user})
+          collection.delete_many({"author": clean_user})
+          visitor_collection.delete_many({"profile_owner": clean_user})
+          
+          st.session_state.logged_in_user = None
+          st.cache_data.clear()
+          st.success("ลบบัญชีผู้ใช้เรียบร้อยแล้ว")
+          st.rerun()
+        else:
+          st.error("❌ รหัสผ่านไม่ถูกต้อง ไม่สามารถลบบัญชีได้")
 
 st.sidebar.markdown("---")
 if st.sidebar.button("🚪 ออกจากระบบ", use_container_width=True, type="secondary"):
@@ -266,7 +318,6 @@ with top_col2:
     
     if recent_visitors:
       for v_item in recent_visitors:
-        # 🛡️ ป้องกัน XSS จากชื่อผู้เยี่ยมชม
         v_name = html.escape(v_item.get("visitor", "ผู้ใช้ไม่ระบุตัวตน"))
         v_time = v_item.get("visited_at").strftime("%Y-%m-%d %H:%M") if v_item.get("visited_at") else "-"
         st.markdown(f"- 👤 **{v_name}** <span style='color:gray; font-size:small;'>({v_time})</span>", unsafe_allow_html=True)
@@ -468,7 +519,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
           if comments:
             for c in comments:
               with st.container(border=True):
-                # 🛡️ ป้องกัน XSS ในหน้าโปรไฟล์ตัวเอง
                 c_user = html.escape(c['user'])
                 c_time = html.escape(c['time'])
                 st.markdown(f"👤 **{c_user}** <span style='color:gray; font-size:small;'>({c_time})</span>", unsafe_allow_html=True)
@@ -527,11 +577,9 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
   st.write("เลือกดูโปรไฟล์และผลงานของเพื่อนร่วมทีม พร้อมส่งข้อความคอมเมนต์และกดไลก์ให้กำลังใจกันได้ที่นี่ครับ!")
   st.markdown("<br>", unsafe_allow_html=True)
 
-  # 🔍 ใช้หลักการเซต (Set) เพื่อหาจุดตัด (Intersection) กรองรายชื่อผีออก
   auth_users = set(u["username"] for u in user_auth_collection.find({}, {"username": 1}))
   profile_users = set(p["author"] for p in profile_collection.find({}, {"author": 1}))
   
-  # ผู้ใช้ต้องมีรายชื่ออยู่ในทั้ง 2 ตารางเท่านั้นถึงจะถูกนำมาแสดง (พร้อมจัดเรียง A-Z ให้สวยงาม)
   all_authors = sorted(list(auth_users & profile_users))
   other_authors = [a for a in all_authors if a.lower() != clean_user.lower()]
 
@@ -581,7 +629,6 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
             comments = log.get("comments", [])
             st.markdown("💬 **ความคิดเห็น:**")
             for c in comments:
-              # 🛡️ ป้องกัน XSS ในหน้าโปรไฟล์คนอื่น
               c_user = html.escape(c['user'])
               c_text = html.escape(c['text']) 
               c_time = html.escape(c['time'])
