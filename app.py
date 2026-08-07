@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import io
 import os
 import bcrypt
@@ -55,7 +55,7 @@ def generate_pdf_report(username, logs_data):
   p.drawString(50, height - 50, f"Work Log Report - {username}")
   
   p.setFont("Helvetica", 10)
-  p.drawString(50, height - 70, f"Generated Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+  p.drawString(50, height - 70, f"Generated Date: {(datetime.now() + timedelta(hours=7)).strftime('%Y-%m-%d %H:%M')}")
   p.line(50, height - 80, width - 50, height - 80)
   
   y_position = height - 110
@@ -182,7 +182,7 @@ if not st.session_state.logged_in_user:
             user_auth_collection.insert_one({
                 "username": reg_user,
                 "password": hash_password(reg_pass),
-                "created_at": datetime.now()
+                "created_at": datetime.now() + timedelta(hours=7)
             })
             profile_collection.insert_one({
                 "author": reg_user,
@@ -391,7 +391,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             "attachments": saved_file_urls,
             "comments": [],
             "likes": [],
-            "created_at": datetime.now(),
+            "created_at": datetime.now() + timedelta(hours=7),
         }
         collection.insert_one(log_data)
         st.success("บันทึกข้อมูลสำเร็จเรียบร้อยแล้ว! 🎉")
@@ -516,7 +516,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             else:
               st.caption("🤍 ยังไม่มีคนถูกใจ")
 
-          # 💬 ส่วนแสดงความคิดเห็นและการตอบกลับ (Nested Comments)
           comments = log.get("comments", [])
           st.markdown("💬 **ความคิดเห็นทั้งหมด:**")
           if comments:
@@ -527,7 +526,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
                 st.markdown(f"👤 **{c_user}** <span style='color:gray; font-size:small;'>({c_time})</span>", unsafe_allow_html=True)
                 st.write(c['text'])
 
-                # แสดงรายการตอบกลับย่อย (Replies)
                 replies = c.get("replies", [])
                 if replies:
                   for r in replies:
@@ -540,7 +538,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
                         </div>
                     """, unsafe_allow_html=True)
 
-                # ฟอร์มตอบกลับความคิดเห็นนี้
                 with st.form(key=f"my_reply_form_{log['_id']}_{c_idx}"):
                   reply_text = st.text_input("💬 ตอบกลับความเห็นนี้:", key=f"my_r_input_{log['_id']}_{c_idx}")
                   submit_reply = st.form_submit_button("ส่งคำตอบกลับ", use_container_width=True)
@@ -549,9 +546,8 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
                       new_reply = {
                           "user": clean_user,
                           "text": reply_text.strip(),
-                          "time": datetime.now().strftime("%Y-%m-%d %H:%M")
+                          "time": (datetime.now() + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M")
                       }
-                      # อัปเดตเพิ่มเข้าไปในอาเรย์ replies ของคอมเมนต์ตำแหน่ง c_idx
                       collection.update_one(
                           {"_id": log["_id"]},
                           {"$push": {f"comments.{c_idx}.replies": new_reply}}
@@ -571,7 +567,7 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
                 new_comment = {
                     "user": clean_user,
                     "text": comment_text.strip(),
-                    "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "time": (datetime.now() + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M"),
                     "replies": []
                 }
                 collection.update_one({"_id": log["_id"]}, {"$push": {"comments": new_comment}})
@@ -629,7 +625,7 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
       visitor_key = f"visited_{selected_friend}"
       if visitor_key not in st.session_state:
         st.session_state[visitor_key] = True
-        visitor_collection.insert_one({"profile_owner": selected_friend, "visitor": clean_user, "visited_at": datetime.now(), "is_read": False})
+        visitor_collection.insert_one({"profile_owner": selected_friend, "visitor": clean_user, "visited_at": datetime.now() + timedelta(hours=7), "is_read": False})
 
       st.divider()
       friend_profile = get_cached_profile(selected_friend)
@@ -671,9 +667,8 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
                 c_user = html.escape(c['user'])
                 c_text = html.escape(c['text']) 
                 c_time = html.escape(c['time'])
-                st.markdown(f"👤 **{c_user}**: {c_text} <span style='color:gray; font-size:small;'>({c_time})</span>", unsafe_allow_html=True)
+                st.markdown(f"- **{c_user}**: {c_text} <span style='color:gray; font-size:small;'>({c_time})</span>", unsafe_allow_html=True)
 
-                # แสดงรายการตอบกลับย่อยในหน้าเพื่อน
                 replies = c.get("replies", [])
                 if replies:
                   for r in replies:
@@ -693,7 +688,7 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
                       new_reply = {
                           "user": clean_user,
                           "text": r_text.strip(),
-                          "time": datetime.now().strftime("%Y-%m-%d %H:%M")
+                          "time": (datetime.now() + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M")
                       }
                       collection.update_one(
                           {"_id": log["_id"]},
@@ -709,7 +704,7 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
                   new_comment = {
                       "user": clean_user,
                       "text": cmt_text.strip(),
-                      "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                      "time": (datetime.now() + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M"),
                       "replies": []
                   }
                   collection.update_one({"_id": log["_id"]}, {"$push": {"comments": new_comment}})
