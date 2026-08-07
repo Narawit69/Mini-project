@@ -19,6 +19,7 @@ collection = db["logs"]
 profile_collection = db["profiles"]
 user_auth_collection = db["users"]
 visitor_collection = db["visitors"]
+profile_comments_collection = db["profile_comments"]
 
 # กำหนดค่าคงที่ (Global Constant)
 ITEMS_PER_PAGE = 5
@@ -28,6 +29,7 @@ collection.create_index([("author", 1), ("created_at", -1)])
 profile_collection.create_index([("author", 1)], unique=True)
 user_auth_collection.create_index([("username", 1)], unique=True)
 visitor_collection.create_index([("profile_owner", 1), ("visited_at", -1)])
+profile_comments_collection.create_index([("profile_owner", 1), ("created_at", -1)])
 
 # ตั้งค่า Cloudinary
 cloudinary.config(
@@ -295,6 +297,7 @@ with st.sidebar.expander("⚙️ ตั้งค่าโปรไฟล์แ�
           profile_collection.delete_one({"author": clean_user})
           collection.delete_many({"author": clean_user})
           visitor_collection.delete_many({"profile_owner": clean_user})
+          profile_comments_collection.delete_many({"profile_owner": clean_user})
           
           st.session_state.logged_in_user = None
           st.cache_data.clear()
@@ -311,25 +314,51 @@ if st.sidebar.button("🚪 ออกจากระบบ", use_container_width=
 top_col1, top_col2 = st.columns([5, 1])
 
 with top_col2:
-  unread_count = visitor_collection.count_documents({"profile_owner": clean_user, "is_read": False})
-  badge_label = f"🔔 กล่องจดหมาย ({unread_count})" if unread_count > 0 else "🔔 กล่องจดหมาย"
+  # นับจำนวนรายการที่ยังไม่ได้อ่านรวมทั้งผู้เข้าชมและคอมเมนต์โปรไฟล์
+  unread_visitors = visitor_collection.count_documents({"profile_owner": clean_user, "is_read": False})
+  unread_profile_cmts = profile_comments_collection.count_documents({"profile_owner": clean_user, "is_read": False})
+  total_unread = unread_visitors + unread_profile_cmts
+  
+  badge_label = f"🔔 กล่องจดหมาย ({total_unread})" if total_unread > 0 else "🔔 กล่องจดหมาย"
   
   with st.popover(badge_label, use_container_width=True):
-    st.markdown("#### 📬 ผู้เข้าชมโปรไฟล์ล่าสุด")
-    recent_visitors = list(visitor_collection.find({"profile_owner": clean_user}).sort("visited_at", -1).limit(10))
+    st.markdown("#### 📬 การแจ้งเตือนล่าสุด")
     
-    if recent_visitors:
-      for v_item in recent_visitors:
-        v_name = html.escape(v_item.get("visitor", "ผู้ใช้ไม่ระบุตัวตน"))
-        v_time = v_item.get("visited_at").strftime("%Y-%m-%d %H:%M") if v_item.get("visited_at") else "-"
-        st.markdown(f"- 👤 **{v_name}** <span style='color:gray; font-size:small;'>({v_time})</span>", unsafe_allow_html=True)
+    # ดึงผู้เข้าชมล่าสุด
+    recent_visitors = list(visitor_collection.find({"profile_owner": clean_user}).sort("visited_at", -1).limit(5))
+    # ดึงคอมเมนต์โปรไฟล์ล่าสุด
+    recent_p_cmts = list(profile_comments_collection.find({"profile_owner": clean_user}).sort("created_at", -1).limit(5))
+    
+    if recent_visitors or recent_p_cmts:
+      st.markdown("##### 👤 ผู้เข้าชมโปรไฟล์")
+      if recent_visitors:
+        for v_item in recent_visitors:
+          v_name = html.escape(v_item.get("visitor", "ผู้ใช้ไม่ระบุตัวตน"))
+          v_time = v_item.get("visited_at").strftime("%Y-%m-%d %H:%M") if v_item.get("visited_at") else "-"
+          st.markdown(f"- 👤 **{v_name}** มาเยี่ยมชม <span style='color:gray; font-size:small;'>({v_time})</span>", unsafe_allow_html=True)
+      else:
+        st.caption("ยังไม่มีผู้เข้าชม")
+
+      st.markdown("##### 💬 คอมเมนต์หน้าโปรไฟล์")
+      if recent_p_cmts:
+        for c_item in recent_p_cmts:
+          c_name = html.escape(c_item.get("sender", "ผู้ใช้"))
+          c_time = c_item.get("created_at").strftime("%Y-%m-%d %H:%M") if c_item.get("created_at") else "-"
+          st.markdown(f"- 💬 **{c_name}** คอมเมนต์: {html.escape(c_item.get('text', ''))[:30]}... <span style='color:gray; font-size:small;'>({c_time})</span>", unsafe_allow_html=True)
+      else:
+        st.caption("ยังไม่มีคอมเมนต์โปรไฟล์")
       
+      # ทำเครื่องหมายว่าอ่านแล้วทั้งหมดเมื่อเปิดดูกล่องจดหมาย
       visitor_collection.update_many(
           {"profile_owner": clean_user, "is_read": False},
           {"$set": {"is_read": True}}
       )
+      profile_comments_collection.update_many(
+          {"profile_owner": clean_user, "is_read": False},
+          {"$set": {"is_read": True}}
+      )
     else:
-      st.caption("📭 ยังไม่มีใครมาเยี่ยมชมโปรไฟล์ของคุณในขณะนี้")
+      st.caption("📭 ยังไม่มีการแจ้งเตือนใหม่ในขณะนี้")
 
 # ==========================================
 # โหมดที่ 1: งานของฉัน & จัดการ (My Work Log)
@@ -595,7 +624,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
             new_title = st.text_input("หัวข้อเรื่อง / งานที่ทำ", value=log['title'])
             new_content = st.text_area("รายละเอียดการทำงาน", value=log['content'])
             
-            # 🗑️ ส่วนเลือกติ๊กพร้อมภาพตัวอย่าง และปุ่มขยายดูภาพขนาดเต็ม (Expander)
             existing_attachments = log.get("attachments", [])
             selected_to_remove = []
             if existing_attachments:
@@ -620,7 +648,6 @@ if nav_mode == "📁 งานของฉัน & จัดการพอร�
                   if is_checked:
                     selected_to_remove.append(att_url)
 
-            # 📎 ส่วนอัปโหลดไฟล์แนบเพิ่มเติม พร้อมแสดงพรีวิวภาพขนาดเล็กและกดดูภาพเต็มได้เช่นกัน
             new_uploaded_files = st.file_uploader(
                 "แนบไฟล์หลักฐานเพิ่มเติม (เลือกได้หลายไฟล์: รูปภาพ / เอกสาร / วิดีโอ)", 
                 type=["png", "jpg", "jpeg", "pdf", "mp4", "mov", "avi"],
@@ -695,11 +722,48 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
         else:
           st.info("🖼️ ไม่มีรูปโปรไฟล์")
       with f_col2:
-        st.subheader(f"👤 โปรไฟล์ของ: {selected_friend}")
+        safe_friend_name = html.escape(selected_friend)
+        st.subheader(f"👤 โปรไฟล์ของ: {safe_friend_name}", unsafe_allow_html=True)
         st.write(f"**Bio:** {friend_profile.get('bio', 'ยังไม่ได้เขียนอธิบายตัวเอง')}")
 
+      # 💬 ส่วนกระดานคอมเมนต์หน้าโปรไฟล์ (Profile Guestbook)
+      st.markdown("---")
+      st.markdown(f"💬 **กระดานข้อความฝากถึง {selected_friend}:**")
+      
+      # ฟอร์มฝากคอมเมนต์หน้าโปรไฟล์
+      with st.form(key=f"profile_guestbook_{selected_friend}"):
+        guest_msg = st.text_input("ฝากข้อความหรือทักทายโปรไฟล์นี้:")
+        submit_guest_cmt = st.form_submit_button("📢 ส่งข้อความโปรไฟล์", use_container_width=True)
+        if submit_guest_cmt:
+          if guest_msg.strip():
+            profile_comments_collection.insert_one({
+                "profile_owner": selected_friend,
+                "sender": clean_user,
+                "text": guest_msg.strip(),
+                "created_at": datetime.now() + timedelta(hours=7),
+                "is_read": False
+            })
+            st.success("ส่งข้อความฝากไว้ที่โปรไฟล์เรียบร้อยแล้ว!")
+            st.rerun()
+          else:
+            st.warning("กรุณากรอกข้อความก่อนส่ง")
+
+      # แสดงรายการคอมเมนต์โปรไฟล์ทั้งหมด
+      profile_cmts_list = list(profile_comments_collection.find({"profile_owner": selected_friend}).sort("created_at", -1))
+      if profile_cmts_list:
+        for p_cmt in profile_cmts_list:
+          with st.container(border=True):
+            p_sender = html.escape(p_cmt.get('sender', ''))
+            p_text = html.escape(p_cmt.get('text', ''))
+            p_time = p_cmt.get('created_at').strftime("%Y-%m-%d %H:%M") if p_cmt.get('created_at') else "-"
+            st.markdown(f"👤 **{p_sender}** <span style='color:gray; font-size:small;'>({p_time})</span>", unsafe_allow_html=True)
+            st.write(p_text)
+      else:
+        st.caption("ยังไม่มีข้อความฝากไว้บนโปรไฟล์นี้ เป็นคนแรกที่ทักทายเลยสิ!")
+
       st.divider()
-      st.subheader(f"📚 ผลงานทั้งหมดของ {selected_friend}")
+      safe_friend_title = html.escape(selected_friend)
+      st.subheader(f"📚 ผลงานทั้งหมดของ {safe_friend_title}", unsafe_allow_html=True)
       
       friend_logs = list(collection.find({"author": selected_friend}).sort("created_at", -1))
       if not friend_logs:
