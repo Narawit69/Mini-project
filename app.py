@@ -522,6 +522,7 @@ elif nav_mode == "🌐 หน้าเยี่ยมชมโปรไฟล์
   st.write("เลือกดูโปรไฟล์และผลงานของเพื่อนร่วมทีม พร้อมส่งข้อความคอมเมนต์และกดไลก์ให้กำลังใจกันได้ที่นี่ครับ!")
   st.markdown("<br>", unsafe_allow_html=True)
 
+  # 🔍 ดึงรายชื่อจากตารางผู้ใช้จริง (user_auth_collection) แทนโปรไฟล์ เพื่อป้องกันรายชื่อค้าง
   all_authors = [u["username"] for u in user_auth_collection.find({}, {"username": 1})]
   other_authors = [a for a in all_authors if a.lower() != clean_user.lower()]
 
